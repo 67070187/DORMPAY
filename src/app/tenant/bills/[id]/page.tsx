@@ -23,16 +23,21 @@ export default async function TenantBillPage({
   // กลับมาจาก Stripe: ถามสถานะกับ Stripe โดยตรง แล้วบันทึกว่าจ่ายแล้ว (ไม่ต้องรอ webhook)
   let notice: { type: "ok" | "warn"; text: string } | null = null;
   if (session_id && stripeConfigured()) {
-    try {
-      const checkout = await stripe().checkout.sessions.retrieve(session_id);
-      if (checkout.metadata?.billId === String(billId) && (await recordStripePayment(checkout))) {
-        notice = { type: "ok", text: "ชำระเงินสำเร็จ ขอบคุณครับ" };
-      } else {
-        notice = { type: "warn", text: "ยังไม่ได้รับยืนยันการชำระเงินจาก Stripe ลองรีเฟรชหน้านี้อีกครั้ง" };
+    // PromptPay ยืนยันแบบ async บางครั้งกลับมาถึงก่อน Stripe อัปเดตสถานะ จึงลองซ้ำสูงสุด 3 ครั้ง
+    let paid = false;
+    for (let attempt = 1; attempt <= 3 && !paid; attempt++) {
+      try {
+        const checkout = await stripe().checkout.sessions.retrieve(session_id);
+        if (checkout.metadata?.billId !== String(billId)) break;
+        paid = await recordStripePayment(checkout);
+      } catch (e) {
+        console.error(`[stripe] verify checkout session failed (attempt ${attempt}):`, e);
       }
-    } catch {
-      notice = { type: "warn", text: "ตรวจสอบสถานะการชำระเงินไม่สำเร็จ" };
+      if (!paid && attempt < 3) await new Promise((r) => setTimeout(r, 1500));
     }
+    notice = paid
+      ? { type: "ok", text: "ชำระเงินสำเร็จ ขอบคุณครับ" }
+      : { type: "warn", text: "ยังไม่ได้รับยืนยันการชำระเงินจาก Stripe กรุณารีเฟรชหน้านี้อีกครั้งในอีกสักครู่" };
   } else if (canceled) {
     notice = { type: "warn", text: "ยกเลิกการชำระเงินแล้ว" };
   }
