@@ -2,6 +2,8 @@ import type { Bill, Payment, Room, User } from "@prisma/client";
 import { baht, monthLabel, thaiDate } from "@/lib/format";
 import StatusBadge from "./StatusBadge";
 
+const METHOD_LABEL: Record<string, string> = { card: "บัตรเครดิต/เดบิต", promptpay: "PromptPay" };
+
 type Props = { bill: Bill & { room: Room; tenant: User; payments: Payment[] } };
 
 export default function BillDetail({ bill }: Props) {
@@ -43,7 +45,7 @@ export default function BillDetail({ bill }: Props) {
 
       <div className="text-sm text-slate-600">
         {bill.status === "PAID" ? (
-          <p>ชำระเมื่อ {bill.paidAt ? thaiDate(bill.paidAt) : "-"}{bill.payments[0]?.method ? ` · ช่องทาง ${bill.payments[0].method}` : ""}</p>
+          <p>ชำระเมื่อ {bill.paidAt ? thaiDate(bill.paidAt) : "-"}{bill.payments[0]?.method ? ` · ช่องทาง ${METHOD_LABEL[bill.payments[0].method] ?? bill.payments[0].method}` : ""}</p>
         ) : (
           <p className={overdue ? "text-red-600" : ""}>ครบกำหนดชำระ {thaiDate(bill.dueDate)}</p>
         )}

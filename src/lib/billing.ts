@@ -1,5 +1,6 @@
 import type Stripe from "stripe";
 import { prisma } from "@/lib/db";
+import { stripe } from "@/lib/stripe";
 
 /** วันครบกำหนด = วันที่ dueDay ของเดือนถัดจากเดือนบิล */
 export function dueDateFor(month: string, dueDay: number) {
@@ -23,6 +24,20 @@ export async function recordStripePayment(session: Stripe.Checkout.Session) {
   const paymentIntent =
     typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
 
+  if (await prisma.payment.findUnique({ where: { stripeSessionId: session.id } })) return true;
+
+  // ช่องทางที่ผู้เช่าใช้จ่ายจริง (card / promptpay) ดูจาก PaymentIntent
+  // (session.payment_method_types คือช่องทางที่ "เลือกได้" ไม่ใช่ช่องทางที่ใช้จริง)
+  let method: string | null = null;
+  if (paymentIntent) {
+    try {
+      const pi = await stripe().paymentIntents.retrieve(paymentIntent, { expand: ["payment_method"] });
+      method = typeof pi.payment_method === "object" && pi.payment_method ? pi.payment_method.type : null;
+    } catch {
+      // ไม่ได้ช่องทางก็ยังบันทึกการชำระได้
+    }
+  }
+
   await prisma.$transaction(async (tx) => {
     const existing = await tx.payment.findUnique({ where: { stripeSessionId: session.id } });
     if (existing) return;
@@ -32,7 +47,7 @@ export async function recordStripePayment(session: Stripe.Checkout.Session) {
         amount: session.amount_total ?? 0,
         stripeSessionId: session.id,
         stripePaymentId: paymentIntent ?? null,
-        method: session.payment_method_types?.join(", ") ?? null,
+        method,
       },
     });
     await tx.bill.update({ where: { id: billId }, data: { status: "PAID", paidAt: new Date() } });
