@@ -3,7 +3,6 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
@@ -11,24 +10,54 @@ import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 
 /**
- * โมเดล 3 มิติของหอพัก DORM-PAY (สร้างจากโค้ดทั้งหมด ไม่โหลดไฟล์โมเดล)
- * - ตึก 4 ชั้น ระเบียงชั้นละ 4 ห้อง ทางเข้ากลางตึก ถังน้ำ + ป้ายบนดาดฟ้า
- * - วัสดุแบบ PBR + texture ที่วาดเองบน canvas, ขอบมน, กระจกสะท้อนแสง
- * - แสงแดด เงา แสงไฟอุ่น และ ambient occlusion (GTAO)
+ * โมเดล 3 มิติของหอพัก (คอนโด 12 ชั้น) สร้างจากโค้ดทั้งหมด ไม่โหลดไฟล์โมเดล
+ * - ตัวตึกหลายส่วนยื่นเข้า-ออก ผนังครีม เสามุมสีส้มอิฐ หลังคาปั้นหยาสีน้ำตาล ป้อมบนหลังคา
+ * - หน้าต่างกรอบขาวเรียงเป็นตาราง ระเบียงยื่นซ้อนกันเป็นแนวตั้ง
+ * - ฐานคอนกรีตแบบโมเดลจำลอง มีสนามหญ้า พุ่มไม้ ต้นไม้ และบันไดทางเข้า
+ * หน้าต่าง/ระเบียง/ซี่ราว ใช้ InstancedMesh เพื่อให้วาดได้เร็ว
  */
 
-const FLOORS = 4;
-const FLOOR_H = 2.4;
-const W = 10; // กว้าง (แกน x)
-const D = 6; // ลึก (แกน z)
-const H = FLOORS * FLOOR_H;
-const FRONT = D / 2;
-const ROOM_X = [-3.75, -1.25, 1.25, 3.75];
+const FH = 1.05; // ความสูงต่อชั้น
+const FLOORS = 12;
+const TOP = FLOORS * FH;
 
-/** หน้าต่างบางบานเปิดไฟ เลือกแบบคงที่ (ไม่สุ่มใหม่ทุกครั้ง) */
-const isLit = (floor: number, i: number, side: number) => (floor * 7 + i * 3 + side * 5) % 5 < 2;
+type Block = { x0: number; x1: number; z0: number; z1: number; floors: number; roofH: number };
 
-/** ตัวสุ่มที่ให้ผลเหมือนเดิมทุกครั้ง (ต้นหญ้า/ดอกไม้จะไม่ขยับที่เมื่อรีเฟรช) */
+// ผังตึก (มองจากด้านบน แกน z บวก = ด้านหน้า)
+const BLOCKS: Block[] = [
+  { x0: -3, x1: 3, z0: -3, z1: 2.5, floors: FLOORS, roofH: 1.5 }, // ตัวตึกหลัก
+  { x0: -5.2, x1: -3, z0: -2.4, z1: 1.4, floors: FLOORS, roofH: 1.1 }, // ปีกซ้าย
+  { x0: 3, x1: 5.6, z0: -2.6, z1: 1.9, floors: FLOORS, roofH: 1.1 }, // ปีกขวา
+  { x0: -1.2, x1: 1.6, z0: 2.5, z1: 3.5, floors: FLOORS, roofH: 0.9 }, // ส่วนยื่นด้านหน้า
+];
+const FRONT_BAY = BLOCKS[3];
+
+type Facing = "front" | "back" | "left" | "right";
+const NORMAL: Record<Facing, [number, number]> = { front: [0, 1], back: [0, -1], right: [1, 0], left: [-1, 0] };
+const ROT: Record<Facing, number> = { front: 0, back: Math.PI, right: Math.PI / 2, left: -Math.PI / 2 };
+
+// ระเบียงที่ซ้อนกันเป็นแนวตั้ง: ผนังด้านไหน (at = ตำแหน่งผนัง) ตรงไหน (along) กว้างเท่าไร
+const BALCONY_STACKS: { facing: Facing; at: number; along: number; width: number }[] = [
+  { facing: "front", at: 2.5, along: -2.1, width: 1.5 }, // ผนังหน้าตัวหลัก ข้างส่วนยื่น
+  { facing: "front", at: 1.9, along: 4.3, width: 1.9 }, // หน้าปีกขวา
+  { facing: "left", at: -5.2, along: -0.5, width: 1.9 }, // ข้างปีกซ้าย
+  { facing: "right", at: 5.6, along: -0.4, width: 1.8 }, // ข้างปีกขวา
+];
+
+const ENTRANCE = { x: 0.2, width: 1.3 }; // ประตูทางเข้าที่ผนังหน้าส่วนยื่น
+
+const COLORS = {
+  wall: "#ecdcc2",
+  accent: "#c8733d", // ส้มอิฐ
+  cornice: 0xf6f1e8,
+  frame: 0xffffff,
+  rail: 0x3f4650,
+  plot: "#d9d6d1",
+  grass: "#6bb35a",
+  leaf: [0x5f9e45, 0x4f8f3c, 0x6fae52, 0x7cbb5c],
+  trunk: 0x6b4a33,
+};
+
 function seeded(seed: number) {
   return () => {
     seed |= 0;
@@ -40,92 +69,56 @@ function seeded(seed: number) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Texture ที่วาดเองบน canvas                                          */
+/* Texture ที่วาดบน canvas                                             */
 /* ------------------------------------------------------------------ */
 
-function canvasTexture(size: number, draw: (ctx: CanvasRenderingContext2D, size: number) => void, repeat = 1, srgb = true) {
+function canvasTexture(draw: (ctx: CanvasRenderingContext2D) => void, rx = 1, ry = 1) {
   const c = document.createElement("canvas");
-  c.width = c.height = size;
-  draw(c.getContext("2d")!, size);
+  c.width = c.height = 256;
+  draw(c.getContext("2d")!);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.repeat.set(repeat, repeat);
+  t.repeat.set(rx, ry);
   t.anisotropy = 4;
-  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
 
-/** ผิวปูนฉาบ: จุดเล็กๆ สีอ่อน-เข้มสลับกันแบบเนียนๆ */
+/** ผิวปูน/คอนกรีต: จุดเล็กๆ สีอ่อน-เข้มสลับกัน */
 function speckle(base: string, spread: number, seed: number) {
-  return (ctx: CanvasRenderingContext2D, s: number) => {
+  return (ctx: CanvasRenderingContext2D) => {
     const rnd = seeded(seed);
     ctx.fillStyle = base;
-    ctx.fillRect(0, 0, s, s);
-    for (let i = 0; i < s * s * 0.35; i++) {
+    ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 256 * 256 * 0.3; i++) {
       const v = (rnd() - 0.5) * spread;
-      ctx.fillStyle = v > 0 ? `rgba(255,255,255,${v})` : `rgba(60,50,40,${-v})`;
-      ctx.fillRect(rnd() * s, rnd() * s, 1 + rnd() * 1.5, 1 + rnd() * 1.5);
+      ctx.fillStyle = v > 0 ? `rgba(255,255,255,${v})` : `rgba(70,55,40,${-v})`;
+      ctx.fillRect(rnd() * 256, rnd() * 256, 1 + rnd(), 1 + rnd());
     }
   };
 }
 
-function grassTexture(ctx: CanvasRenderingContext2D, s: number) {
-  const rnd = seeded(7);
-  ctx.fillStyle = "#79c98a";
-  ctx.fillRect(0, 0, s, s);
-  for (let i = 0; i < 2600; i++) {
-    const g = 150 + rnd() * 70;
-    ctx.strokeStyle = `rgba(${70 + rnd() * 40},${g},${90 + rnd() * 30},0.55)`;
-    ctx.lineWidth = 1;
-    const x = rnd() * s;
-    const y = rnd() * s;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + (rnd() - 0.5) * 3, y - 3 - rnd() * 5);
-    ctx.stroke();
-  }
-}
-
-function pavingTexture(ctx: CanvasRenderingContext2D, s: number) {
-  const rnd = seeded(11);
-  ctx.fillStyle = "#cfc8bd";
-  ctx.fillRect(0, 0, s, s);
-  const n = 4;
-  const cell = s / n;
-  for (let y = 0; y < n; y++) {
-    for (let x = 0; x < n; x++) {
-      const off = y % 2 ? cell / 2 : 0;
-      const tone = 228 + rnd() * 16;
-      ctx.fillStyle = `rgb(${tone},${tone - 5},${tone - 12})`;
-      ctx.fillRect(x * cell + off + 2, y * cell + 2, cell - 4, cell - 4);
-      if (off) ctx.fillRect(off - cell + 2, y * cell + 2, cell - 4, cell - 4);
+/** กระเบื้องหลังคา: แถวแนวนอนสลับเฉดน้ำตาล */
+function shingles(ctx: CanvasRenderingContext2D) {
+  const rnd = seeded(5);
+  ctx.fillStyle = "#6e5242";
+  ctx.fillRect(0, 0, 256, 256);
+  for (let y = 0; y < 256; y += 16) {
+    for (let x = (y / 16) % 2 ? -12 : 0; x < 256; x += 24) {
+      ctx.fillStyle = `hsl(24, 24%, ${36 + rnd() * 12}%)`;
+      ctx.fillRect(x + 1, y + 1, 22, 13);
     }
   }
 }
 
-function signTexture() {
-  const c = document.createElement("canvas");
-  c.width = 1024;
-  c.height = 256;
-  const ctx = c.getContext("2d")!;
-  const g = ctx.createLinearGradient(0, 0, 1024, 256);
-  g.addColorStop(0, "#7c83f0");
-  g.addColorStop(1, "#5b5fd6");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 1024, 256);
-  ctx.fillStyle = "rgba(255,255,255,0.12)";
-  ctx.fillRect(0, 0, 1024, 110);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 150px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.shadowColor = "rgba(30,27,75,0.35)";
-  ctx.shadowBlur = 12;
-  ctx.fillText("DORM-PAY", 512, 136);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
-  return t;
+function grassTexture(ctx: CanvasRenderingContext2D) {
+  const rnd = seeded(9);
+  ctx.fillStyle = COLORS.grass;
+  ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 4000; i++) {
+    ctx.fillStyle = `hsla(${95 + rnd() * 20}, ${45 + rnd() * 20}%, ${30 + rnd() * 25}%, 0.6)`;
+    ctx.fillRect(rnd() * 256, rnd() * 256, 1, 2 + rnd() * 3);
+  }
 }
 
 function skyTexture() {
@@ -134,9 +127,9 @@ function skyTexture() {
   c.height = 512;
   const ctx = c.getContext("2d")!;
   const g = ctx.createLinearGradient(0, 0, 0, 512);
-  g.addColorStop(0, "#a9dcf7");
-  g.addColorStop(0.55, "#dfe7fb");
-  g.addColorStop(1, "#eef0ff");
+  g.addColorStop(0, "#9fd0f0");
+  g.addColorStop(0.6, "#dbe8f7");
+  g.addColorStop(1, "#f1f4fb");
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 2, 512);
   const t = new THREE.CanvasTexture(c);
@@ -144,76 +137,71 @@ function skyTexture() {
   return t;
 }
 
-/* ------------------------------------------------------------------ */
-/* วัสดุ                                                              */
-/* ------------------------------------------------------------------ */
-
 function createMaterials() {
-  const plaster = canvasTexture(256, speckle("#f3e6d0", 0.09, 1), 3);
-  const plasterBump = canvasTexture(256, speckle("#808080", 0.5, 2), 3, false);
-  const concrete = canvasTexture(256, speckle("#d6d9de", 0.14, 3), 2);
-  const stone = canvasTexture(256, speckle("#e4ddd2", 0.12, 4), 1);
-  const grass = canvasTexture(512, grassTexture, 10);
-  const paving = canvasTexture(256, pavingTexture, 1);
-  paving.repeat.set(1, 4);
-
+  const wallMap = canvasTexture(speckle(COLORS.wall, 0.1, 1), 2, 6);
+  const accentMap = canvasTexture(speckle(COLORS.accent, 0.12, 2), 1, 4);
+  const roofMap = canvasTexture(shingles, 3, 3);
+  const plotMap = canvasTexture(speckle(COLORS.plot, 0.12, 3), 4, 4);
+  const grassMap = canvasTexture(grassTexture, 3, 3);
   const std = (p: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial(p);
   return {
-    textures: [plaster, plasterBump, concrete, stone, grass, paving],
-    wall: std({ color: 0xffffff, map: plaster, bumpMap: plasterBump, bumpScale: 0.6, roughness: 0.93 }),
-    plinth: std({ color: 0xffffff, map: stone, roughness: 0.85 }),
-    trim: std({ color: 0xa9adf2, roughness: 0.45, metalness: 0.05 }), // ม่วงพาสเทล
-    slab: std({ color: 0xfbf8f2, map: stone, roughness: 0.8 }),
-    roof: std({ color: 0xffffff, map: concrete, roughness: 0.95 }),
-    rail: std({ color: 0xeef0f4, roughness: 0.3, metalness: 0.75 }),
-    frame: std({ color: 0xfafbfc, roughness: 0.35, metalness: 0.4 }),
-    darkFrame: std({ color: 0x475569, roughness: 0.35, metalness: 0.6 }),
+    textures: [wallMap, accentMap, roofMap, plotMap, grassMap],
+    wall: std({ map: wallMap, roughness: 0.9 }),
+    accent: std({ map: accentMap, roughness: 0.85 }),
+    cornice: std({ color: COLORS.cornice, roughness: 0.7 }),
+    roof: std({ map: roofMap, roughness: 0.85, flatShading: true }),
+    frame: std({ color: COLORS.frame, roughness: 0.4, metalness: 0.1 }),
     glass: new THREE.MeshPhysicalMaterial({
-      color: 0x8fc3ec,
-      roughness: 0.04,
-      metalness: 0.15,
+      color: 0x5f86ab,
+      roughness: 0.05,
+      metalness: 0.3,
       clearcoat: 1,
-      clearcoatRoughness: 0.03,
-      envMapIntensity: 2.2,
+      clearcoatRoughness: 0.05,
+      envMapIntensity: 2.4,
     }),
-    litGlass: std({ color: 0xfff3d6, emissive: 0xffc46b, emissiveIntensity: 0.85, roughness: 0.2 }),
-    lamp: std({ color: 0xfff7e6, emissive: 0xffd08a, emissiveIntensity: 2.2 }),
-    door: std({ color: 0x64748b, roughness: 0.6 }),
-    tank: new THREE.MeshPhysicalMaterial({ color: 0x8cc4f5, roughness: 0.25, metalness: 0.1, clearcoat: 0.8 }),
-    tankBand: std({ color: 0x5b9bd9, roughness: 0.35 }),
-    pot: std({ color: 0xd98a6a, roughness: 0.75 }),
-    soil: std({ color: 0x8a6a52, roughness: 1 }),
-    base: std({ color: 0xece2d0, map: stone, roughness: 0.9 }),
-    grass: std({ color: 0xffffff, map: grass, roughness: 1 }),
-    paving: std({ color: 0xffffff, map: paving, roughness: 0.85 }),
-    trunk: std({ color: 0x8b6247, roughness: 0.9 }),
-    leaves: [0x6cc27c, 0x55b06a, 0x86d48f, 0x4a9e5e].map((c) => std({ color: c, roughness: 0.85 })),
-    blade: std({ color: 0xffffff, roughness: 0.9, side: THREE.DoubleSide }),
-    flower: std({ color: 0xffffff, roughness: 0.6 }),
-    sign: std({ color: 0xffffff, map: signTexture(), roughness: 0.4, emissive: 0xffffff, emissiveIntensity: 0.08 }),
+    slab: std({ color: 0xf3ede3, roughness: 0.75 }),
+    rail: std({ color: COLORS.rail, roughness: 0.4, metalness: 0.7 }),
+    plot: std({ map: plotMap, roughness: 0.95 }),
+    grass: std({ map: grassMap, roughness: 1 }),
+    step: std({ color: 0xe7e3dc, roughness: 0.9 }),
+    trunk: std({ color: COLORS.trunk, roughness: 0.9 }),
+    leaves: COLORS.leaf.map((c) => std({ color: c, roughness: 0.85 })),
   };
 }
 type Mats = ReturnType<typeof createMaterials>;
 
 /* ------------------------------------------------------------------ */
-/* ตัวช่วยสร้างรูปทรง                                                  */
+/* ตัวช่วย                                                             */
 /* ------------------------------------------------------------------ */
 
-const geoCache = new Map<string, THREE.BufferGeometry>();
-function roundedGeo(w: number, h: number, d: number, r: number) {
-  const radius = Math.min(r, w / 2 - 0.001, h / 2 - 0.001, d / 2 - 0.001);
-  const key = `${w}|${h}|${d}|${radius}`;
-  let g = geoCache.get(key);
-  if (!g) {
-    g = new RoundedBoxGeometry(w, h, d, 3, radius);
-    geoCache.set(key, g);
+/** เก็บกล่องที่ใช้วัสดุเดียวกันไว้ แล้วสร้างเป็น InstancedMesh ทีเดียว (วาดเร็วกว่าหลายพัน mesh) */
+class BoxBatch {
+  private items = new Map<THREE.Material, THREE.Matrix4[]>();
+  private tmp = new THREE.Object3D();
+
+  add(mat: THREE.Material, x: number, y: number, z: number, sx: number, sy: number, sz: number, rotY = 0) {
+    this.tmp.position.set(x, y, z);
+    this.tmp.rotation.set(0, rotY, 0);
+    this.tmp.scale.set(sx, sy, sz);
+    this.tmp.updateMatrix();
+    if (!this.items.has(mat)) this.items.set(mat, []);
+    this.items.get(mat)!.push(this.tmp.matrix.clone());
   }
-  return g;
+
+  build(parent: THREE.Object3D) {
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    for (const [mat, list] of this.items) {
+      const m = new THREE.InstancedMesh(geo, mat, list.length);
+      list.forEach((mx, i) => m.setMatrixAt(i, mx));
+      m.castShadow = true;
+      m.receiveShadow = true;
+      parent.add(m);
+    }
+  }
 }
 
-/** กล่องขอบมน */
-function rbox(parent: THREE.Object3D, w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number, r = 0.04) {
-  const m = new THREE.Mesh(roundedGeo(w, h, d, r), mat);
+function mesh(parent: THREE.Object3D, geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number) {
+  const m = new THREE.Mesh(geo, mat);
   m.position.set(x, y, z);
   m.castShadow = true;
   m.receiveShadow = true;
@@ -221,316 +209,193 @@ function rbox(parent: THREE.Object3D, w: number, h: number, d: number, mat: THRE
   return m;
 }
 
-function cylinder(parent: THREE.Object3D, rt: number, rb: number, h: number, mat: THREE.Material, x: number, y: number, z: number, seg = 16) {
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
-  m.position.set(x, y, z);
-  m.castShadow = true;
-  m.receiveShadow = true;
-  parent.add(m);
-  return m;
+/** หลังคาปั้นหยา: พีระมิดฐานสี่เหลี่ยม ขยายตามขนาดที่ต้องการ */
+function hipRoof(parent: THREE.Object3D, mat: THREE.Material, x: number, y: number, z: number, w: number, d: number, h: number) {
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.SQRT1_2, h, 4, 1), mat);
+  roof.rotation.y = Math.PI / 4;
+  roof.scale.set(w, 1, d);
+  roof.position.set(x, y + h / 2, z);
+  roof.castShadow = true;
+  roof.receiveShadow = true;
+  parent.add(roof);
 }
 
-type Facing = "front" | "back" | "left" | "right";
-
-/** หน้าต่างกระจก + กรอบอลูมิเนียม + ขอบบัวใต้หน้าต่าง */
-function addWindow(parent: THREE.Object3D, m: Mats, o: { w: number; h: number; x: number; y: number; z: number; facing: Facing; lit: boolean; sill?: boolean }) {
-  const g = new THREE.Group();
-  const t = 0.07;
-  const glass = new THREE.Mesh(new THREE.PlaneGeometry(o.w, o.h), o.lit ? m.litGlass : m.glass);
-  glass.position.z = 0.015;
-  g.add(glass);
-  rbox(g, o.w + 2 * t, t, 0.08, m.frame, 0, o.h / 2 + t / 2, 0.04, 0.02);
-  rbox(g, o.w + 2 * t, t, 0.08, m.frame, 0, -o.h / 2 - t / 2, 0.04, 0.02);
-  rbox(g, t, o.h, 0.08, m.frame, -o.w / 2 - t / 2, 0, 0.04, 0.02);
-  rbox(g, t, o.h, 0.08, m.frame, o.w / 2 + t / 2, 0, 0.04, 0.02);
-  if (o.w > 0.95) rbox(g, 0.045, o.h, 0.06, m.frame, 0, 0, 0.035, 0.015); // เสากลางบานเลื่อน
-  if (o.sill !== false) rbox(g, o.w + 0.3, 0.06, 0.16, m.slab, 0, -o.h / 2 - t - 0.03, 0.08, 0.025);
-
-  const rot = { front: 0, back: Math.PI, right: Math.PI / 2, left: -Math.PI / 2 }[o.facing];
-  g.rotation.y = rot;
-  g.position.set(o.x, o.y, o.z);
-  parent.add(g);
+/** จุดนี้อยู่ข้างในตึกส่วนอื่นไหม (ใช้ตัดหน้าต่างที่ถูกบัง) */
+function insideOther(x: number, z: number, self: Block) {
+  return BLOCKS.some((b) => b !== self && x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1);
 }
 
-/** กระถางต้นไม้ + ดอกไม้เล็กๆ */
-function addPlant(parent: THREE.Object3D, m: Mats, x: number, y: number, z: number, rnd: () => number, flowers: THREE.Matrix4[], flowerColors: THREE.Color[]) {
-  cylinder(parent, 0.13, 0.095, 0.22, m.pot, x, y + 0.11, z, 14);
-  cylinder(parent, 0.115, 0.115, 0.02, m.soil, x, y + 0.215, z, 14);
-  const leaf = new THREE.Mesh(new THREE.IcosahedronGeometry(0.17 + rnd() * 0.05, 1), m.leaves[Math.floor(rnd() * m.leaves.length)]);
-  leaf.position.set(x, y + 0.36, z);
-  leaf.scale.y = 0.9 + rnd() * 0.3;
-  leaf.castShadow = true;
-  parent.add(leaf);
-  const palette = [0xf9a8d4, 0xc4b5fd, 0xfde68a, 0xfda4af, 0xffffff];
-  const color = new THREE.Color(palette[Math.floor(rnd() * palette.length)]);
-  for (let i = 0; i < 4; i++) {
-    const a = rnd() * Math.PI * 2;
-    flowers.push(new THREE.Matrix4().makeTranslation(x + Math.cos(a) * 0.12, y + 0.42 + rnd() * 0.08, z + Math.sin(a) * 0.12));
-    flowerColors.push(color);
-  }
+/** แปลง (ตำแหน่งผนัง, ระยะตามแนวผนัง, ระยะยื่นออกจากผนัง) เป็นพิกัด x,z */
+function onFace(facing: Facing, at: number, along: number, out: number): [number, number] {
+  const [nx, nz] = NORMAL[facing];
+  return nx !== 0 ? [at + nx * out, along] : [along, at + nz * out];
 }
 
 /* ------------------------------------------------------------------ */
 /* ตัวตึก                                                              */
 /* ------------------------------------------------------------------ */
 
-function buildDorm(m: Mats, lights: THREE.Object3D[]) {
+function buildBuilding(m: Mats) {
   const g = new THREE.Group();
-  const rnd = seeded(42);
-  const balusters: THREE.Matrix4[] = [];
-  const flowers: THREE.Matrix4[] = [];
-  const flowerColors: THREE.Color[] = [];
+  const batch = new BoxBatch();
 
-  // ตัวตึก + ฐาน
-  rbox(g, W, H, D, m.wall, 0, H / 2, 0, 0.18);
-  rbox(g, W + 0.3, 0.22, D + 0.3, m.plinth, 0, 0.11, 0, 0.06);
+  for (const b of BLOCKS) {
+    const w = b.x1 - b.x0;
+    const d = b.z1 - b.z0;
+    const cx = (b.x0 + b.x1) / 2;
+    const cz = (b.z0 + b.z1) / 2;
+    const h = b.floors * FH;
 
-  // คิ้วสีม่วงพาสเทลคั่นแต่ละชั้น
-  for (let f = 1; f <= FLOORS; f++) rbox(g, W + 0.2, 0.16, D + 0.2, m.trim, 0, f * FLOOR_H, 0, 0.06);
+    // ผนัง + ฐานชั้นล่างสีส้มอิฐ + คิ้วขาวเหนือชั้นล่าง + แถบส้มและบัวใต้หลังคา
+    mesh(g, new THREE.BoxGeometry(w, h, d), m.wall, cx, h / 2, cz);
+    batch.add(m.accent, cx, FH / 2, cz, w + 0.08, FH, d + 0.08);
+    batch.add(m.cornice, cx, FH, cz, w + 0.16, 0.1, d + 0.16);
+    batch.add(m.accent, cx, h - 0.12, cz, w + 0.12, 0.2, d + 0.12);
+    batch.add(m.cornice, cx, h + 0.05, cz, w + 0.4, 0.14, d + 0.4);
 
-  // ชั้น 2-4: ห้องละ 1 ระเบียง
-  for (let f = 1; f < FLOORS; f++) {
-    const y0 = f * FLOOR_H;
-    ROOM_X.forEach((x, i) => {
-      const lit = isLit(f, i, 0);
-      addWindow(g, m, { w: 1.4, h: 1.7, x, y: y0 + 1.07, z: FRONT, facing: "front", lit, sill: false });
+    // เสาสีส้มอิฐที่มุมตึก
+    for (const [x, z] of [[b.x0, b.z0], [b.x1, b.z0], [b.x0, b.z1], [b.x1, b.z1]]) {
+      batch.add(m.accent, x, (h + FH) / 2, z, 0.32, h - FH, 0.32);
+    }
 
-      const zb = FRONT + 0.47; // กลางระเบียง
-      const zr = FRONT + 0.9; // แนวราวด้านหน้า
-      rbox(g, 2.2, 0.14, 0.95, m.slab, x, y0 + 0.08, zb, 0.04);
-      rbox(g, 0.08, 1.0, 0.95, m.wall, x - 1.08, y0 + 0.6, zb, 0.03); // ผนังกั้นระหว่างห้อง
+    hipRoof(g, m.roof, cx, h + 0.12, cz, w + 0.5, d + 0.5, b.roofH);
 
-      // ราวเหล็ก: ราวบน ราวกลาง ราวล่าง + ซี่ราว (ใช้ InstancedMesh)
-      for (const [yy, s] of [[1.0, 0.06], [0.55, 0.035], [0.22, 0.035]] as const) {
-        rbox(g, 2.12, s, s, m.rail, x + 0.02, y0 + yy, zr, s / 2.2);
-        rbox(g, s, s, 0.86, m.rail, x + 1.06, y0 + yy, zb + 0.02, s / 2.2);
+    // หน้าต่างกรอบขาว ทุกด้านของตึกส่วนนี้ (ข้ามจุดที่ถูกส่วนอื่นบัง / ตรงระเบียง / ตรงประตูทางเข้า)
+    const faces: { facing: Facing; at: number; from: number; to: number }[] = [
+      { facing: "front", at: b.z1, from: b.x0, to: b.x1 },
+      { facing: "back", at: b.z0, from: b.x0, to: b.x1 },
+      { facing: "right", at: b.x1, from: b.z0, to: b.z1 },
+      { facing: "left", at: b.x0, from: b.z0, to: b.z1 },
+    ];
+    for (const f of faces) {
+      const len = f.to - f.from;
+      const n = Math.max(1, Math.floor((len - 0.3) / 0.82));
+      const r = ROT[f.facing];
+      const stacks = BALCONY_STACKS.filter((s) => s.facing === f.facing && Math.abs(s.at - f.at) < 0.01);
+      for (let i = 0; i < n; i++) {
+        const along = f.from + (len * (i + 0.5)) / n;
+        if (stacks.some((s) => Math.abs(along - s.along) < s.width / 2 + 0.2)) continue;
+        const [px, pz] = onFace(f.facing, f.at, along, 0.05);
+        if (insideOther(px, pz, b)) continue;
+        const [fx, fz] = onFace(f.facing, f.at, along, 0.015);
+        const [gx, gz] = onFace(f.facing, f.at, along, 0.04);
+        const [sx, sz] = onFace(f.facing, f.at, along, 0.07);
+        for (let fl = 0; fl < b.floors; fl++) {
+          if (fl === 0 && b === FRONT_BAY && f.facing === "front" && Math.abs(along - ENTRANCE.x) < ENTRANCE.width) continue;
+          const y = fl * FH + 0.55;
+          batch.add(m.frame, fx, y, fz, 0.6, 0.7, 0.04, r); // กรอบ
+          batch.add(m.glass, gx, y, gz, 0.48, 0.58, 0.02, r); // กระจก
+          batch.add(m.frame, gx, y, gz, 0.03, 0.58, 0.035, r); // เสากลาง
+          batch.add(m.cornice, sx, y - 0.37, sz, 0.7, 0.05, 0.1, r); // ขอบบัวใต้หน้าต่าง
+        }
       }
-      for (let p = -0.98; p <= 1.0; p += 0.14) balusters.push(new THREE.Matrix4().makeTranslation(x + p, y0 + 0.6, zr));
-      for (let q = 0.12; q < 0.88; q += 0.14) balusters.push(new THREE.Matrix4().makeTranslation(x + 1.06, y0 + 0.6, FRONT + q));
-
-      // กระถางต้นไม้ 1-3 ใบ
-      const spots = [-0.72, 0.1, 0.72].filter(() => rnd() > 0.3);
-      if (!spots.length) spots.push(-0.7);
-      spots.forEach((sx) => addPlant(g, m, x + sx, y0 + 0.15, FRONT + 0.7, rnd, flowers, flowerColors));
-
-      // โคมไฟเพดานระเบียง (ห้องที่เปิดไฟ)
-      if (lit) cylinder(g, 0.11, 0.11, 0.03, m.lamp, x, y0 + FLOOR_H - 0.1, zb, 16);
-    });
+    }
   }
 
-  // ชั้นล่าง: หน้าต่าง 4 บาน
-  [-3.5, -2, 2, 3.5].forEach((x, i) => addWindow(g, m, { w: 1, h: 1.1, x, y: 1.3, z: FRONT, facing: "front", lit: isLit(0, i, 0) }));
-
-  // ทางเข้า: ประตูกระจกบานคู่ กรอบสีเทาเข้ม มือจับ กันสาด เสา บันได โคมไฟผนัง
-  rbox(g, 2.2, 2.05, 0.12, m.darkFrame, 0, 1.2, FRONT + 0.02, 0.03);
-  for (const sx of [-0.45, 0.45]) {
-    const pane = new THREE.Mesh(new THREE.PlaneGeometry(0.82, 1.82), m.glass);
-    pane.position.set(sx, 1.15, FRONT + 0.09);
-    g.add(pane);
-    cylinder(g, 0.018, 0.018, 0.6, m.rail, sx > 0 ? 0.1 : -0.1, 1.15, FRONT + 0.14, 8);
+  // ระเบียงซ้อนกันเป็นแนวตั้ง (ชั้น 2 ถึงชั้นบนสุด)
+  for (const s of BALCONY_STACKS) {
+    const r = ROT[s.facing];
+    const depth = 0.7;
+    for (let fl = 1; fl < FLOORS; fl++) {
+      const y = fl * FH;
+      const at = (along: number, out: number) => onFace(s.facing, s.at, along, out);
+      let [x, z] = at(s.along, 0.03);
+      batch.add(m.frame, x, y + 0.45, z, 0.95, 0.85, 0.04, r); // กรอบประตูระเบียง
+      [x, z] = at(s.along, 0.055);
+      batch.add(m.glass, x, y + 0.45, z, 0.85, 0.75, 0.02, r);
+      [x, z] = at(s.along, depth / 2);
+      batch.add(m.slab, x, y + 0.04, z, s.width, 0.08, depth, r); // พื้นระเบียง
+      [x, z] = at(s.along, depth - 0.03);
+      batch.add(m.rail, x, y + 0.52, z, s.width, 0.04, 0.04, r); // ราวบน
+      batch.add(m.rail, x, y + 0.14, z, s.width, 0.03, 0.03, r); // ราวล่าง
+      for (let p = -s.width / 2 + 0.05; p <= s.width / 2 - 0.04; p += 0.11) {
+        [x, z] = at(s.along + p, depth - 0.03);
+        batch.add(m.rail, x, y + 0.33, z, 0.02, 0.38, 0.02, r); // ซี่ราว
+      }
+      for (const side of [-1, 1]) {
+        const edge = s.along + (side * s.width) / 2;
+        for (let q = 0.1; q < depth - 0.05; q += 0.12) {
+          [x, z] = at(edge, q);
+          batch.add(m.rail, x, y + 0.33, z, 0.02, 0.38, 0.02, r);
+        }
+        [x, z] = at(edge, depth / 2);
+        batch.add(m.rail, x, y + 0.52, z, 0.04, 0.04, depth, r);
+      }
+    }
   }
-  rbox(g, 0.05, 1.85, 0.05, m.darkFrame, 0, 1.15, FRONT + 0.1, 0.02);
-  rbox(g, 3.1, 0.14, 1.5, m.trim, 0, 2.27, FRONT + 0.72, 0.05);
-  for (const sx of [-1.4, 1.4]) cylinder(g, 0.04, 0.04, 2.2, m.rail, sx, 1.1, FRONT + 1.35, 10);
-  rbox(g, 2.8, 0.2, 1.0, m.plinth, 0, 0.1, FRONT + 0.6, 0.04);
-  rbox(g, 3.2, 0.1, 0.5, m.plinth, 0, 0.05, FRONT + 1.3, 0.03);
-  for (const sx of [-1.3, 1.3]) {
-    rbox(g, 0.16, 0.24, 0.1, m.lamp, sx, 1.75, FRONT + 0.08, 0.04);
-    const light = new THREE.PointLight(0xffc77a, 3, 5, 2);
-    light.position.set(sx, 1.75, FRONT + 0.5);
-    lights.push(light);
+
+  // ป้อมบนหลังคา (สีส้มอิฐ + หลังคาเล็ก + หน้าต่าง)
+  for (const [x, z, w] of [[-4.1, 0, 1.1], [4.3, 0.8, 1.2], [0.2, -1.6, 1.3]] as const) {
+    const y0 = TOP + 0.1;
+    mesh(g, new THREE.BoxGeometry(w, 1.6, w), m.accent, x, y0 + 0.8, z);
+    batch.add(m.cornice, x, y0 + 1.63, z, w + 0.25, 0.08, w + 0.25);
+    hipRoof(g, m.roof, x, y0 + 1.66, z, w + 0.35, w + 0.35, 0.55);
+    batch.add(m.frame, x, y0 + 1.05, z + w / 2 + 0.02, 0.42, 0.42, 0.04);
+    batch.add(m.glass, x, y0 + 1.05, z + w / 2 + 0.04, 0.32, 0.32, 0.02);
   }
 
-  // ด้านหลัง และด้านข้าง
-  for (let f = 0; f < FLOORS; f++) {
-    const y = f * FLOOR_H + 1.3;
-    ROOM_X.forEach((x, i) => addWindow(g, m, { w: 0.9, h: 0.9, x, y, z: -FRONT, facing: "back", lit: isLit(f, i, 1) }));
-    [-1.5, 1.5].forEach((z, i) => {
-      addWindow(g, m, { w: 0.9, h: 0.9, x: W / 2, y, z, facing: "right", lit: isLit(f, i, 2) });
-      addWindow(g, m, { w: 0.9, h: 0.9, x: -W / 2, y, z, facing: "left", lit: isLit(f, i, 3) });
-    });
-  }
+  // ทางเข้า: ประตูกระจกบานคู่ กันสาด บันได (ยิ่งไกลตึกยิ่งเตี้ย)
+  const fz = FRONT_BAY.z1;
+  batch.add(m.frame, ENTRANCE.x, 0.55, fz + 0.02, 1.2, 1.0, 0.05);
+  batch.add(m.glass, ENTRANCE.x - 0.27, 0.53, fz + 0.05, 0.5, 0.88, 0.02);
+  batch.add(m.glass, ENTRANCE.x + 0.27, 0.53, fz + 0.05, 0.5, 0.88, 0.02);
+  batch.add(m.cornice, ENTRANCE.x, 1.12, fz + 0.45, 1.9, 0.08, 0.9);
+  for (let i = 0; i < 3; i++) batch.add(m.step, ENTRANCE.x, (3 - i) * 0.05, fz + 0.3 + i * 0.3, 2.2, (3 - i) * 0.1, 0.3);
 
-  // ดาดฟ้า: พื้นคอนกรีต ขอบกันตก ห้องบันได ถังน้ำ
-  rbox(g, W - 0.25, 0.05, D - 0.25, m.roof, 0, H + 0.1, 0, 0.02);
-  for (const [w, d, x, z] of [
-    [W, 0.18, 0, FRONT - 0.09],
-    [W, 0.18, 0, -FRONT + 0.09],
-    [0.18, D, W / 2 - 0.09, 0],
-    [0.18, D, -W / 2 + 0.09, 0],
-  ] as const) {
-    rbox(g, w, 0.5, d, m.wall, x, H + 0.25, z, 0.06);
-    rbox(g, w + 0.04, 0.06, d + 0.04, m.trim, x, H + 0.52, z, 0.025);
-  }
-  rbox(g, 2, 1.8, 2, m.wall, -3, H + 0.9, -1, 0.1);
-  rbox(g, 2.25, 0.14, 2.25, m.trim, -3, H + 1.86, -1, 0.05);
-  rbox(g, 0.7, 1.3, 0.06, m.door, -3, H + 0.75, 0.02, 0.02);
-
-  rbox(g, 1.3, 0.08, 1.3, m.rail, 3, H + 0.9, -1.4, 0.02);
-  for (const dx of [-0.5, 0.5]) for (const dz of [-0.5, 0.5]) cylinder(g, 0.035, 0.035, 0.85, m.rail, 3 + dx, H + 0.47, -1.4 + dz, 8);
-  cylinder(g, 0.62, 0.62, 1.1, m.tank, 3, H + 1.5, -1.4, 32);
-  for (const yy of [1.15, 1.85]) cylinder(g, 0.635, 0.635, 0.05, m.tankBand, 3, H + yy, -1.4, 32);
-  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.62, 32, 12, 0, Math.PI * 2, 0, Math.PI / 2), m.tank);
-  cap.scale.y = 0.35;
-  cap.position.set(3, H + 2.05, -1.4);
-  cap.castShadow = true;
-  g.add(cap);
-
-  // ป้าย DORM-PAY
-  rbox(g, 4.6, 1.2, 0.16, m.trim, 0, H + 1.4, FRONT - 0.3, 0.07);
-  const face = new THREE.Mesh(new THREE.PlaneGeometry(4.35, 1.0), m.sign);
-  face.position.set(0, H + 1.4, FRONT - 0.21);
-  g.add(face);
-  for (const sx of [-1.6, 1.6]) cylinder(g, 0.05, 0.05, 0.85, m.rail, sx, H + 0.45, FRONT - 0.3, 8);
-
-  // InstancedMesh: ซี่ราวทั้งหมด และดอกไม้บนระเบียง
-  const bal = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.016, 0.016, 0.78, 6), m.rail, balusters.length);
-  balusters.forEach((mat, i) => bal.setMatrixAt(i, mat));
-  bal.castShadow = true;
-  g.add(bal);
-
-  const fl = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.045, 0), m.flower, flowers.length);
-  flowers.forEach((mat, i) => {
-    fl.setMatrixAt(i, mat);
-    fl.setColorAt(i, flowerColors[i]);
-  });
-  g.add(fl);
-
+  batch.build(g);
   return g;
 }
 
 /* ------------------------------------------------------------------ */
-/* สภาพแวดล้อม                                                         */
+/* ฐานคอนกรีต สนามหญ้า ต้นไม้                                          */
 /* ------------------------------------------------------------------ */
 
-function insideFootprint(x: number, z: number) {
-  if (Math.abs(x) < W / 2 + 0.6 && Math.abs(z) < D / 2 + 0.6) return true; // ตัวตึก
-  if (Math.abs(x) < 1.7 && z > FRONT) return true; // ทางเดิน + บันได
-  if (Math.abs(Math.abs(x) - 3.2) < 1.7 && z > FRONT && z < FRONT + 1.8) return true; // แปลงดอกไม้
-  return false;
+/** แผ่นรูปหลายเหลี่ยมบนพื้น (จุดเป็นพิกัด x, z) */
+function flatShape(points: [number, number][], depth: number, mat: THREE.Material, y: number) {
+  const shape = new THREE.Shape(points.map(([x, z]) => new THREE.Vector2(x, -z)));
+  const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelSize: 0.06, bevelThickness: 0.04, bevelSegments: 2 });
+  geo.rotateX(-Math.PI / 2);
+  const m = new THREE.Mesh(geo, mat);
+  m.position.y = y;
+  m.receiveShadow = true;
+  m.castShadow = true;
+  return m;
 }
 
-function buildEnvironment(m: Mats, detail: number, sway: THREE.Object3D[], lights: THREE.Object3D[]) {
+function buildSite(m: Mats, sway: THREE.Object3D[]) {
   const g = new THREE.Group();
-  const rnd = seeded(2026);
-  const R = 15;
+  const rnd = seeded(31);
 
-  // ฐานแบบโมเดลจำลอง (diorama) + สนามหญ้า
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(R, R + 0.25, 0.8, 72), m.base);
-  base.position.y = -0.41;
-  base.receiveShadow = true;
-  g.add(base);
-  const lawn = new THREE.Mesh(new THREE.CircleGeometry(R, 72), m.grass);
-  lawn.rotation.x = -Math.PI / 2;
-  lawn.receiveShadow = true;
-  g.add(lawn);
+  // ฐานคอนกรีตทรงหลายเหลี่ยม (เหมือนโมเดลจำลอง)
+  g.add(flatShape([[-8, -5.5], [7.5, -5.5], [9, 1], [7.5, 7.5], [-6.5, 7], [-9, 1.5]], 0.35, m.plot, -0.39));
 
-  // ทางเดินปูกระเบื้อง + ขอบคันหิน
-  const pathLen = R - FRONT - 1.4;
-  const path = new THREE.Mesh(new THREE.PlaneGeometry(2.4, pathLen), m.paving);
-  path.rotation.x = -Math.PI / 2;
-  path.position.set(0, 0.012, FRONT + 1.55 + pathLen / 2);
-  path.receiveShadow = true;
-  g.add(path);
-  for (const sx of [-1.28, 1.28]) rbox(g, 0.14, 0.1, pathLen, m.plinth, sx, 0.05, FRONT + 1.55 + pathLen / 2, 0.03);
+  // สนามหญ้า (เว้นทางเดินหน้าตึกไว้)
+  g.add(flatShape([[-8.2, 2], [-6.6, 3.8], [-1.1, 4], [-1.1, 6.6], [-6.2, 6.5]], 0.03, m.grass, 0));
+  g.add(flatShape([[1.5, 4], [7, 3.5], [8.3, 1.5], [7.2, 7], [1.5, 6.8]], 0.03, m.grass, 0));
+  g.add(flatShape([[-7.6, -5], [-5.8, -5], [-5.9, 0.9], [-8.3, 1.2]], 0.03, m.grass, 0));
+  g.add(flatShape([[6.1, -5], [7.3, -5], [8.5, 0.8], [6.3, 0.6]], 0.03, m.grass, 0));
 
-  // โคมไฟริมทาง
-  for (const [sx, z] of [[-1.7, FRONT + 4.5], [1.7, FRONT + 7.5]] as const) {
-    cylinder(g, 0.05, 0.07, 1.9, m.darkFrame, sx, 0.95, z, 10);
-    const globe = new THREE.Mesh(new THREE.SphereGeometry(0.17, 20, 14), m.lamp);
-    globe.position.set(sx, 2.0, z);
-    g.add(globe);
-    const light = new THREE.PointLight(0xffc77a, 2, 4, 2);
-    light.position.set(sx, 1.9, z);
-    lights.push(light);
-  }
-
-  // แปลงดอกไม้หน้าตึก (ตำแหน่งพุ่มไม้เดิม)
-  const flowerM: THREE.Matrix4[] = [];
-  const flowerC: THREE.Color[] = [];
-  const palette = [0xf9a8d4, 0xc4b5fd, 0xfde68a, 0xfbcfe8, 0xffffff, 0xa5b4fc];
-  for (const sx of [-3.2, 3.2]) {
-    rbox(g, 3.1, 0.22, 1.2, m.plinth, sx, 0.11, FRONT + 1.05, 0.06);
-    rbox(g, 2.9, 0.04, 1.0, m.soil, sx, 0.22, FRONT + 1.05, 0.02);
-    for (const bx of [-1, 1]) {
-      const bush = new THREE.Group();
-      for (let k = 0; k < 3; k++) {
-        const s = new THREE.Mesh(new THREE.IcosahedronGeometry(0.32 + rnd() * 0.1, 1), m.leaves[k % m.leaves.length]);
-        s.position.set((k - 1) * 0.28, 0.28 + rnd() * 0.08, (rnd() - 0.5) * 0.2);
-        s.castShadow = true;
-        bush.add(s);
-      }
-      bush.position.set(sx + bx * 0.85, 0.2, FRONT + 1.05);
-      g.add(bush);
-    }
-    for (let i = 0; i < 26; i++) {
-      flowerM.push(new THREE.Matrix4().makeTranslation(sx + (rnd() - 0.5) * 1.1, 0.3 + rnd() * 0.12, FRONT + 0.6 + rnd() * 0.9));
-      flowerC.push(new THREE.Color(palette[Math.floor(rnd() * palette.length)]));
-    }
-  }
-
-  // ต้นไม้ (ตำแหน่งเดิม): ลำต้นเรียว + พุ่มใบหลายลูก
-  const trees: [number, number, number][] = [
-    [-8, 5, 1.1], [8, 4, 1], [-9, -3, 1.2], [9, -4, 0.9], [-4, 8.5, 0.8], [5, 9, 0.85],
+  // พุ่มไม้กลม
+  const bushes: [number, number, number][] = [
+    [-2.3, 4.7, 0.55], [2.7, 4.6, 0.6], [-4.6, 4.5, 0.5], [5.2, 4.2, 0.55], [-6.8, -1.5, 0.5], [7.1, -2, 0.5], [-1.7, 6, 0.4], [4, 6.2, 0.45],
   ];
+  for (const [x, z, r] of bushes) {
+    const b = mesh(g, new THREE.IcosahedronGeometry(r, 2), m.leaves[Math.floor(rnd() * m.leaves.length)], x, r * 0.8, z);
+    b.scale.y = 0.85;
+  }
+
+  // ต้นไม้
+  const trees: [number, number, number][] = [[-7, 4.8, 1.1], [7.3, 5.2, 1.2], [-7.2, -3.5, 1.0], [6.8, -4, 0.95]];
   trees.forEach(([x, z, s], ti) => {
-    cylinder(g, 0.13 * s, 0.24 * s, 2 * s, m.trunk, x, s, z, 10);
+    mesh(g, new THREE.CylinderGeometry(0.08 * s, 0.13 * s, 1.6 * s, 8), m.trunk, x, 0.8 * s, z);
     const crown = new THREE.Group();
-    crown.position.set(x, 2.3 * s, z);
-    const parts: [number, number, number, number][] = [
-      [0, 0.15, 0, 1.15], [0.6, -0.15, 0.2, 0.8], [-0.55, -0.1, -0.25, 0.85], [0.1, 0.75, -0.1, 0.75], [-0.2, -0.2, 0.6, 0.7],
-    ];
-    parts.forEach(([dx, dy, dz, r], k) => {
-      const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(r * s, 2), m.leaves[(ti + k) % m.leaves.length]);
-      blob.position.set(dx * s, dy * s, dz * s);
-      blob.castShadow = true;
-      blob.receiveShadow = true;
-      crown.add(blob);
-    });
-    crown.userData.phase = ti * 1.3;
+    crown.position.set(x, 1.9 * s, z);
+    const parts: [number, number, number, number][] = [[0, 0.2, 0, 0.85], [0.45, -0.15, 0.15, 0.6], [-0.4, -0.1, -0.2, 0.62], [0.05, 0.7, -0.05, 0.55]];
+    parts.forEach(([dx, dy, dz, r], k) => mesh(crown, new THREE.IcosahedronGeometry(r * s, 2), m.leaves[(ti + k) % m.leaves.length], dx * s, dy * s, dz * s));
+    crown.userData.phase = ti * 1.7;
     sway.push(crown);
     g.add(crown);
   });
-
-  // ใบหญ้า + ดอกไม้ในสนาม (InstancedMesh)
-  const bladeGeo = new THREE.ConeGeometry(0.035, 0.32, 3);
-  bladeGeo.translate(0, 0.16, 0);
-  const bladeCount = Math.round(2600 * detail);
-  const blades = new THREE.InstancedMesh(bladeGeo, m.blade, bladeCount);
-  const tmp = new THREE.Object3D();
-  const col = new THREE.Color();
-  let n = 0;
-  while (n < bladeCount) {
-    const a = rnd() * Math.PI * 2;
-    const r = Math.sqrt(rnd()) * (R - 0.3);
-    const x = Math.cos(a) * r;
-    const z = Math.sin(a) * r;
-    if (insideFootprint(x, z)) continue;
-    tmp.position.set(x, 0, z);
-    tmp.rotation.set((rnd() - 0.5) * 0.4, rnd() * Math.PI, (rnd() - 0.5) * 0.4);
-    tmp.scale.setScalar(0.7 + rnd() * 0.8);
-    tmp.updateMatrix();
-    blades.setMatrixAt(n, tmp.matrix);
-    blades.setColorAt(n, col.setHSL(0.31 + rnd() * 0.06, 0.5 + rnd() * 0.15, 0.36 + rnd() * 0.12));
-    n++;
-  }
-  g.add(blades);
-
-  for (let i = 0; i < Math.round(160 * detail); i++) {
-    const a = rnd() * Math.PI * 2;
-    const r = 3 + Math.sqrt(rnd()) * (R - 3.5);
-    const x = Math.cos(a) * r;
-    const z = Math.sin(a) * r;
-    if (insideFootprint(x, z)) continue;
-    flowerM.push(new THREE.Matrix4().makeTranslation(x, 0.16 + rnd() * 0.08, z));
-    flowerC.push(new THREE.Color(palette[Math.floor(rnd() * palette.length)]));
-  }
-  const fl = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.06, 0), m.flower, flowerM.length);
-  flowerM.forEach((mat, i) => {
-    fl.setMatrixAt(i, mat);
-    fl.setColorAt(i, flowerC[i]);
-  });
-  g.add(fl);
 
   return g;
 }
@@ -556,19 +421,17 @@ export default function DormModel({ className }: { className?: string }) {
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, small ? 1.5 : 1.75));
-    renderer.toneMapping = THREE.NeutralToneMapping; // คงสีพาสเทลไว้ ไม่ซีดแบบ ACES
+    renderer.toneMapping = THREE.NeutralToneMapping;
     renderer.toneMappingExposure = 0.95;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    // ฉากไม่ขยับ (มีแต่กล้องหมุน) จึงคำนวณเงาครั้งเดียวพอ ไม่ต้องทุกเฟรม
-    renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.autoUpdate = false; // ฉากไม่ขยับ (มีแต่กล้องหมุน) คำนวณเงาครั้งเดียวพอ
     renderer.shadowMap.needsUpdate = true;
     renderer.domElement.setAttribute("role", "img");
-    renderer.domElement.setAttribute("aria-label", "โมเดล 3 มิติของหอพัก DORM-PAY");
+    renderer.domElement.setAttribute("aria-label", "โมเดล 3 มิติของหอพัก");
     renderer.domElement.style.touchAction = "pan-y";
     el.appendChild(renderer.domElement);
 
-    // ฉาก + แสงสะท้อนรอบทิศ (ทำให้กระจกและโลหะสะท้อนแสงได้สมจริง)
     const scene = new THREE.Scene();
     const sky = skyTexture();
     scene.background = sky;
@@ -579,43 +442,40 @@ export default function DormModel({ className }: { className?: string }) {
 
     const mats = createMaterials();
     const sway: THREE.Object3D[] = [];
-    const lights: THREE.Object3D[] = [];
-    scene.add(buildEnvironment(mats, small ? 0.45 : 1, sway, lights), buildDorm(mats, lights));
-    scene.add(...lights);
+    scene.add(buildSite(mats, sway), buildBuilding(mats));
 
-    // แสงแดดอุ่นๆ + แสงฟ้า + แสงเติมด้านตรงข้าม
-    scene.add(new THREE.HemisphereLight(0xdbeafe, 0xb7e4c0, 0.55));
-    const sun = new THREE.DirectionalLight(0xffedd2, 2.6);
-    sun.position.set(14, 22, 12);
+    scene.add(new THREE.HemisphereLight(0xdbeafe, 0xcfe8c2, 0.6));
+    const sun = new THREE.DirectionalLight(0xfff0d8, 2.7);
+    sun.position.set(-14, 26, 16); // แดดส่องจากด้านหน้าซ้าย
     sun.castShadow = true;
     sun.shadow.mapSize.set(small ? 1024 : 2048, small ? 1024 : 2048);
     sun.shadow.bias = -0.0004;
     sun.shadow.normalBias = 0.03;
-    Object.assign(sun.shadow.camera, { left: -17, right: 17, top: 17, bottom: -17, near: 1, far: 70 });
+    Object.assign(sun.shadow.camera, { left: -18, right: 18, top: 20, bottom: -16, near: 1, far: 80 });
     scene.add(sun);
-    const fill = new THREE.DirectionalLight(0xc7d2fe, 0.5);
-    fill.position.set(-12, 8, -10);
+    const fill = new THREE.DirectionalLight(0xdbe4ff, 0.5);
+    fill.position.set(14, 8, -10);
     scene.add(fill);
 
     const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 200);
-    camera.position.set(20, 13, 24);
+    camera.position.set(17, 13, 26);
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 4.8, 0);
+    controls.target.set(0, TOP / 2 + 0.3, 0);
     controls.enableDamping = true;
     controls.enablePan = false;
     controls.enableZoom = false; // ไม่ดักการเลื่อนหน้าเว็บ
-    controls.minPolarAngle = 0.5;
-    controls.maxPolarAngle = 1.4;
+    controls.minPolarAngle = 0.6;
+    controls.maxPolarAngle = 1.45;
     controls.autoRotate = !reduceMotion;
-    controls.autoRotateSpeed = 0.7;
+    controls.autoRotateSpeed = 0.6;
 
     // Post-processing: ambient occlusion (เงานุ่มๆ ตามซอกมุม)
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
     const ao = new GTAOPass(scene, camera, 512, 512);
-    ao.updateGtaoMaterial({ radius: 0.7, distanceExponent: 1.5, thickness: 1.2, scale: 1, samples: small ? 8 : 16 });
-    ao.blendIntensity = 0.85;
+    ao.updateGtaoMaterial({ radius: 0.5, distanceExponent: 1.5, thickness: 1, scale: 1, samples: small ? 8 : 16 });
+    ao.blendIntensity = 0.8;
     composer.addPass(ao);
     composer.addPass(new OutputPass());
 
@@ -626,14 +486,17 @@ export default function DormModel({ className }: { className?: string }) {
       composer.setPixelRatio(renderer.getPixelRatio());
       composer.setSize(w, h);
       camera.aspect = w / h;
-      camera.position.setLength(w / h < 1 ? 46 : 35); // จอแคบ: ถอยกล้องให้เห็นทั้งตึก
+      // ถอยกล้องให้ทั้งตึก (รัศมีประมาณ 10.5 หน่วย) อยู่ในจอพอดี ไม่ว่าจอจะกว้างหรือแคบ
+      const vHalf = THREE.MathUtils.degToRad(camera.fov / 2);
+      const hHalf = Math.atan(Math.tan(vHalf) * camera.aspect);
+      camera.position.setLength(10.5 / Math.sin(Math.min(vHalf, hHalf)));
       camera.updateProjectionMatrix();
     };
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(el);
     resize();
 
-    // ปรับคุณภาพอัตโนมัติ: ถ้าเครื่องวาดได้ช้า ปิด AO และลดความละเอียด
+    // ปรับคุณภาพอัตโนมัติ: ถ้าเครื่องวาดได้ช้า ปิด AO แล้วค่อยลดความละเอียด
     let quality = 2;
     let frames = 0;
     let windowStart = performance.now();
@@ -662,14 +525,12 @@ export default function DormModel({ className }: { className?: string }) {
         }
       }
       controls.update();
-      composer.render();
-    };
+      composer.render();    };
 
     // หยุดวาดเมื่อมองไม่เห็น (ประหยัดแบตมือถือ)
     let visible = true;
     const sync = () => {
-      const on = visible && document.visibilityState === "visible";
-      renderer.setAnimationLoop(on ? loop : null);
+      renderer.setAnimationLoop(visible && document.visibilityState === "visible" ? loop : null);
       frames = 0;
       windowStart = performance.now();
     };
@@ -695,9 +556,7 @@ export default function DormModel({ className }: { className?: string }) {
           (Array.isArray(o.material) ? o.material : [o.material]).forEach((mat) => mat.dispose());
         }
       });
-      geoCache.clear();
       mats.textures.forEach((t) => t.dispose());
-      mats.sign.map?.dispose();
       sky.dispose();
       envMap.dispose();
       pmrem.dispose();

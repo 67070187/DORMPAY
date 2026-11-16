@@ -13,7 +13,7 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen flex-col lg:flex-row">
       <section
-        className="relative h-72 shrink-0 overflow-hidden sm:h-96 lg:h-auto lg:flex-1"
+        className="relative h-[26rem] shrink-0 overflow-hidden sm:h-[30rem] lg:h-auto lg:flex-1"
         style={{ background: "linear-gradient(180deg, #bae6fd 0%, #e0e7ff 60%, #eef2ff 100%)" }}
       >
         <DormModel className="absolute inset-0 cursor-grab active:cursor-grabbing" />
