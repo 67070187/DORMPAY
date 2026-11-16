@@ -1,7 +1,7 @@
 import Link from "next/link";
-import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/db";
+import { api } from "@/lib/api";
 import { baht, monthLabel, thaiDate } from "@/lib/format";
+import type { Bill } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 
 export default async function BillsPage({
@@ -10,21 +10,11 @@ export default async function BillsPage({
   searchParams: Promise<{ month?: string; status?: string }>;
 }) {
   const { month, status } = await searchParams;
-  const months = await prisma.bill.findMany({ distinct: ["month"], select: { month: true }, orderBy: { month: "desc" } });
-
-  const where: Prisma.BillWhereInput = {};
-  if (month) where.month = month;
-  if (status === "PAID" || status === "UNPAID") where.status = status;
-  if (status === "OVERDUE") Object.assign(where, { status: "UNPAID", dueDate: { lt: new Date() } });
-
-  const bills = await prisma.bill.findMany({
-    where,
-    include: { room: true, tenant: true },
-    orderBy: [{ month: "desc" }, { room: { number: "asc" } }],
-    take: 300,
-  });
+  const q = new URLSearchParams();
+  if (month) q.set("month", month);
+  if (status) q.set("status", status);
+  const [months, bills] = await Promise.all([api<string[]>("/bills/months"), api<Bill[]>(`/bills?${q}`)]);
   const sum = bills.reduce((s, b) => s + b.total, 0);
-  const now = new Date();
 
   return (
     <div className="space-y-4">
@@ -34,7 +24,7 @@ export default async function BillsPage({
           <select name="month" defaultValue={month ?? ""} className="input !w-44" aria-label="เดือน">
             <option value="">ทุกเดือน</option>
             {months.map((m) => (
-              <option key={m.month} value={m.month}>{monthLabel(m.month)}</option>
+              <option key={m} value={m}>{monthLabel(m)}</option>
             ))}
           </select>
           <select name="status" defaultValue={status ?? ""} className="input !w-36" aria-label="สถานะ">
@@ -64,17 +54,13 @@ export default async function BillsPage({
             {bills.map((b) => (
               <tr key={b.id}>
                 <td>{monthLabel(b.month)}</td>
-                <td className="font-medium">{b.room.number}</td>
-                <td>{b.tenant.name}</td>
+                <td className="font-medium">{b.roomNumber}</td>
+                <td>{b.tenantName}</td>
                 <td className="text-right">{baht(b.total)}</td>
-                <td className="text-slate-500">{thaiDate(b.dueDate)}</td>
-                <td>
-                  <StatusBadge status={b.status} overdue={b.dueDate < now} />
-                </td>
+                <td className="text-slate-500">{thaiDate(new Date(b.dueDate))}</td>
+                <td><StatusBadge status={b.displayStatus} /></td>
                 <td className="text-right">
-                  <Link href={`/admin/bills/${b.id}`} className="text-indigo-600 hover:underline">
-                    ดูรายละเอียด
-                  </Link>
+                  <Link href={`/admin/bills/${b.id}`} className="text-indigo-600 hover:underline">ดูรายละเอียด</Link>
                 </td>
               </tr>
             ))}

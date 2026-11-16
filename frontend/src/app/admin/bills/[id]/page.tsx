@@ -1,16 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/db";
+import { api, ApiError } from "@/lib/api";
+import type { BillWithPayments } from "@/lib/types";
 import BillDetail from "@/components/BillDetail";
 import { deleteBill } from "../../actions";
 
 export default async function AdminBillPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const bill = await prisma.bill.findUnique({
-    where: { id: Number(id) || 0 },
-    include: { room: true, tenant: true, payments: { orderBy: { paidAt: "desc" } } },
+  const bill = await api<BillWithPayments>(`/bills/${Number(id) || 0}`).catch((e) => {
+    if (e instanceof ApiError && (e.status === 404 || e.status === 400)) notFound();
+    throw e;
   });
-  if (!bill) notFound();
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -22,7 +22,7 @@ export default async function AdminBillPage({ params }: { params: Promise<{ id: 
           {bill.payments.map((p) => (
             <p key={p.id} className="break-all text-slate-600">
               เลขอ้างอิง <span className="font-mono">{p.reference}</span> · {p.method} ·{" "}
-              {p.paidAt.toLocaleString("th-TH")}
+              {new Date(p.paidAt).toLocaleString("th-TH")}
             </p>
           ))}
         </div>

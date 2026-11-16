@@ -1,38 +1,15 @@
-import { prisma } from "@/lib/db";
-import { baht, currentMonth, monthLabel } from "@/lib/format";
-import { getSettings } from "@/lib/billing";
+import { api } from "@/lib/api";
+import { baht, monthLabel } from "@/lib/format";
+import type { MeterRow, Settings } from "@/lib/types";
 import ActionForm from "@/components/ActionForm";
 import StatusBadge from "@/components/StatusBadge";
 import { saveMeterReadings } from "../actions";
 
 export default async function MetersPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const { month: m } = await searchParams;
-  const month = m && /^\d{4}-\d{2}$/.test(m) ? m : currentMonth();
-  const settings = await getSettings();
-
-  const rooms = await prisma.room.findMany({
-    where: { OR: [{ tenantId: { not: null } }, { meterReadings: { some: { month } } }] },
-    include: {
-      tenant: true,
-      meterReadings: { where: { month: { lte: month } }, orderBy: { month: "desc" }, take: 2 },
-      bills: { where: { month } },
-    },
-    orderBy: { number: "asc" },
-  });
-
-  const rows = rooms.map((room) => {
-    const thisMonth = room.meterReadings.find((r) => r.month === month);
-    const before = room.meterReadings.find((r) => r.month < month);
-    return {
-      room,
-      bill: room.bills[0],
-      thisMonth,
-      waterPrev: thisMonth?.waterPrev ?? before?.waterCurr ?? 0,
-      elecPrev: thisMonth?.elecPrev ?? before?.elecCurr ?? 0,
-      prevKnown: !!(thisMonth || before),
-    };
-  });
-  const done = rows.filter((r) => r.bill).length;
+  const q = m && /^\d{4}-\d{2}$/.test(m) ? `?month=${m}` : "";
+  const { month, settings, rooms } = await api<{ month: string; settings: Settings; rooms: MeterRow[] }>(`/meters${q}`);
+  const done = rooms.filter((r) => r.billId).length;
 
   return (
     <div className="space-y-4">
@@ -40,7 +17,7 @@ export default async function MetersPage({ searchParams }: { searchParams: Promi
         <div>
           <h1 className="text-lg font-semibold">จดมิเตอร์น้ำ-ไฟ · {monthLabel(month)}</h1>
           <p className="text-sm text-slate-500">
-            จดแล้ว {done}/{rows.length} ห้อง · ค่าน้ำ {baht(settings.waterRate)} บาท/หน่วย · ค่าไฟ{" "}
+            จดแล้ว {done}/{rooms.length} ห้อง · ค่าน้ำ {baht(settings.waterRate)} บาท/หน่วย · ค่าไฟ{" "}
             {baht(settings.elecRate)} บาท/หน่วย
           </p>
         </div>
@@ -66,63 +43,37 @@ export default async function MetersPage({ searchParams }: { searchParams: Promi
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ room, bill, thisMonth, waterPrev, elecPrev, prevKnown }) => {
-                const locked = bill?.status === "PAID";
-                const key = `${room.id}-${thisMonth?.id ?? "new"}-${bill?.total ?? 0}`;
+              {rooms.map((r) => {
+                const locked = r.billStatus === "PAID";
+                const lockPrev = r.prevKnown ? "!bg-slate-50 text-slate-500" : "";
                 return (
-                  <tr key={key} className={locked ? "bg-slate-50" : ""}>
+                  <tr key={`${r.roomId}-${r.billId ?? "new"}-${r.billTotal ?? 0}`} className={locked ? "bg-slate-50" : ""}>
                     <td className="font-medium">
-                      {room.number}
-                      {!locked && <input type="hidden" name="roomId" value={room.id} />}
+                      {r.roomNumber}
+                      {!locked && <input type="hidden" name="roomId" value={r.roomId} />}
                     </td>
-                    <td className="text-slate-600">{room.tenant?.name ?? "-"}</td>
+                    <td className="text-slate-600">{r.tenantName ?? "-"}</td>
                     <td>
-                      <input
-                        name={`waterPrev_${room.id}`}
-                        type="number"
-                        min="0"
-                        defaultValue={waterPrev}
-                        readOnly={prevKnown}
-                        disabled={locked}
-                        className={`input !w-24 ${prevKnown ? "!bg-slate-50 text-slate-500" : ""}`}
-                      />
+                      <input name={`waterPrev_${r.roomId}`} type="number" min="0" defaultValue={r.waterPrev}
+                        readOnly={r.prevKnown} disabled={locked} className={`input !w-24 ${lockPrev}`} />
                     </td>
                     <td>
-                      <input
-                        name={`waterCurr_${room.id}`}
-                        type="number"
-                        min={waterPrev}
-                        defaultValue={thisMonth?.waterCurr}
-                        disabled={locked}
-                        className="input !w-24"
-                      />
+                      <input name={`waterCurr_${r.roomId}`} type="number" min={r.waterPrev}
+                        defaultValue={r.waterCurr ?? undefined} disabled={locked} className="input !w-24" />
                     </td>
                     <td>
-                      <input
-                        name={`elecPrev_${room.id}`}
-                        type="number"
-                        min="0"
-                        defaultValue={elecPrev}
-                        readOnly={prevKnown}
-                        disabled={locked}
-                        className={`input !w-24 ${prevKnown ? "!bg-slate-50 text-slate-500" : ""}`}
-                      />
+                      <input name={`elecPrev_${r.roomId}`} type="number" min="0" defaultValue={r.elecPrev}
+                        readOnly={r.prevKnown} disabled={locked} className={`input !w-24 ${lockPrev}`} />
                     </td>
                     <td>
-                      <input
-                        name={`elecCurr_${room.id}`}
-                        type="number"
-                        min={elecPrev}
-                        defaultValue={thisMonth?.elecCurr}
-                        disabled={locked}
-                        className="input !w-24"
-                      />
+                      <input name={`elecCurr_${r.roomId}`} type="number" min={r.elecPrev}
+                        defaultValue={r.elecCurr ?? undefined} disabled={locked} className="input !w-24" />
                     </td>
                     <td>
-                      {bill ? (
+                      {r.billId ? (
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">{baht(bill.total)}</span>
-                          <StatusBadge status={bill.status} />
+                          <span className="font-medium">{baht(r.billTotal ?? 0)}</span>
+                          <StatusBadge status={r.billStatus === "PAID" ? "PAID" : "UNPAID"} />
                         </div>
                       ) : (
                         <span className="text-slate-400">ยังไม่ออกบิล</span>
@@ -131,7 +82,7 @@ export default async function MetersPage({ searchParams }: { searchParams: Promi
                   </tr>
                 );
               })}
-              {!rows.length && (
+              {!rooms.length && (
                 <tr>
                   <td colSpan={7} className="py-6 text-center text-slate-400">ยังไม่มีห้องที่มีผู้เช่า</td>
                 </tr>

@@ -1,26 +1,19 @@
-import type { Bill, Room, Setting } from "@prisma/client";
+import { api } from "@/lib/api";
 import { baht, monthLabel } from "@/lib/format";
-import { maskPromptPayId, promptPayPayload } from "@/lib/promptpay";
+import type { Bill, PromptPayInfo } from "@/lib/types";
 import PromptPayModal from "./PromptPayModal";
 
-/** ปุ่มชำระเงินของบิล (สร้าง QR PromptPay ฝั่งเซิร์ฟเวอร์แล้วส่งให้ modal) */
-export default function PayBill({
-  bill,
-  settings,
-  label,
-}: {
-  bill: Bill & { room: Room };
-  settings: Setting;
-  label?: string;
-}) {
+/** ปุ่มชำระเงิน: ขอข้อมูล QR จาก GET /api/bills/:id/promptpay แล้วส่งให้ modal */
+export default async function PayBill({ bill, label }: { bill: Bill; label?: string }) {
+  const pp = await api<PromptPayInfo>(`/bills/${bill.id}/promptpay`);
   return (
     <PromptPayModal
       billId={bill.id}
-      amount={baht(bill.total)}
-      title={`ห้อง ${bill.room.number} · ${monthLabel(bill.month)}`}
-      payload={promptPayPayload(settings.promptPayId, bill.total)}
-      accountName={settings.promptPayName}
-      accountId={maskPromptPayId(settings.promptPayId)}
+      amount={baht(pp.amount)}
+      title={`ห้อง ${bill.roomNumber} · ${monthLabel(bill.month)}`}
+      payload={pp.payload}
+      accountName={pp.accountName}
+      accountId={pp.accountId}
       buttonLabel={label}
     />
   );

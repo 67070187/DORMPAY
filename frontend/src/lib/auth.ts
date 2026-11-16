@@ -1,30 +1,24 @@
-import { SignJWT, jwtVerify } from "jose";
+import { jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-export const SESSION_COOKIE = "dormpay_session";
+/** cookie เก็บ JWT ที่ backend ออกให้ตอน login (ชื่อเดียวกับฝั่ง backend) */
+export const SESSION_COOKIE = "token";
 
 export type Session = { userId: number; role: "ADMIN" | "TENANT"; name: string };
 
 function secret() {
-  const s = process.env.AUTH_SECRET;
-  if (!s) throw new Error("ยังไม่ได้ตั้งค่า AUTH_SECRET ในไฟล์ .env");
+  const s = process.env.JWT_SECRET;
+  if (!s) throw new Error("ยังไม่ได้ตั้งค่า JWT_SECRET ในไฟล์ frontend/.env");
   return new TextEncoder().encode(s);
 }
 
-export async function signSession(session: Session) {
-  return new SignJWT(session)
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setExpirationTime("7d")
-    .sign(secret());
-}
-
+/** ตรวจลายเซ็น JWT ด้วย secret เดียวกับ backend */
 export async function verifySession(token: string | undefined): Promise<Session | null> {
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secret());
-    return payload as unknown as Session;
+    return { userId: Number(payload.sub), role: payload.role as Session["role"], name: String(payload.name) };
   } catch {
     return null;
   }

@@ -28,7 +28,8 @@ describe("Rooms CRUD", () => {
   });
 
   test("POST เลขห้องซ้ำ -> 409", async () => {
-    await admin.post("/api/rooms").send({ number: "301", floor: 3, rent: 400000 }).expect(409);
+    const res = await admin.post("/api/rooms").send({ number: "301", floor: 3, rent: 400000 }).expect(409);
+    expect(res.body.error).toBe("มีห้อง 301 อยู่แล้ว");
   });
 
   test("POST ข้อมูลไม่ครบ/ผิด -> 400", async () => {

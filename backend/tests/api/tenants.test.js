@@ -31,7 +31,8 @@ describe("Tenants", () => {
   });
 
   test("username ซ้ำ -> 409, ห้องไม่ว่าง -> 409 (และไม่สร้าง user ค้างไว้)", async () => {
-    await admin.post("/api/tenants").send({ username: "newbie", password: "secret123", name: "x" }).expect(409);
+    const dup = await admin.post("/api/tenants").send({ username: "newbie", password: "secret123", name: "x" }).expect(409);
+    expect(dup.body.error).toBe("ชื่อผู้ใช้ newbie ถูกใช้แล้ว");
     await admin.post("/api/tenants").send({ username: "other", password: "secret123", name: "x", roomId: 1 }).expect(409);
     const [[{ n }]] = await pool.query("SELECT COUNT(*) AS n FROM users WHERE username = 'other'");
     expect(n).toBe(0); // transaction rollback

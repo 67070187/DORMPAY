@@ -9,7 +9,7 @@ export function baht(satang: number): string {
 
 export function toSatang(value: FormDataEntryValue | null): number {
   const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) throw new Error("จำนวนเงินไม่ถูกต้อง");
+  if (value === null || value === "" || !Number.isFinite(n) || n < 0) throw new RangeError("จำนวนเงินไม่ถูกต้อง");
   return Math.round(n * 100);
 }
 

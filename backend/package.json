@@ -8,16 +8,17 @@
     "dev": "nodemon src/server.js",
     "db:init": "node db/init.js",
     "db:seed": "node db/init.js --seed",
-    "test": "jest --runInBand",
+    "test": "jest",
     "test:unit": "jest tests/unit",
-    "test:api": "jest tests/api --runInBand"
+    "test:api": "jest tests/api"
   },
   "jest": {
     "testEnvironment": "node",
     "setupFiles": [
       "./tests/setupEnv.js"
     ],
-    "globalSetup": "./tests/globalSetup.js"
+    "globalSetup": "./tests/globalSetup.js",
+    "maxWorkers": 1
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

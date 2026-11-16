@@ -1,9 +1,10 @@
-import { prisma } from "@/lib/db";
+import { api } from "@/lib/api";
+import type { Room } from "@/lib/types";
 import ActionForm from "@/components/ActionForm";
 import { createRoom, deleteRoom, updateRoomRent } from "../actions";
 
 export default async function RoomsPage() {
-  const rooms = await prisma.room.findMany({ include: { tenant: true }, orderBy: { number: "asc" } });
+  const rooms = await api<Room[]>("/rooms");
   const vacant = rooms.filter((r) => !r.tenantId).length;
 
   return (
@@ -31,15 +32,15 @@ export default async function RoomsPage() {
                 <td className="font-medium">{r.number}</td>
                 <td>{r.floor}</td>
                 <td>
-                  {r.tenant ? (
-                    r.tenant.name
-                  ) : (
+                  {r.tenantName ?? (
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">ว่าง</span>
                   )}
                 </td>
                 <td>
                   <form action={updateRoomRent} className="flex items-center gap-2">
                     <input type="hidden" name="id" value={r.id} />
+                    <input type="hidden" name="number" value={r.number} />
+                    <input type="hidden" name="floor" value={r.floor} />
                     <input
                       name="rent"
                       type="number"
@@ -69,7 +70,7 @@ export default async function RoomsPage() {
             )}
           </tbody>
         </table>
-        <p className="mt-3 text-xs text-slate-400">ค่าเช่าเริ่มใช้กับบิลที่ออกหลังจากแก้ไข · ลบได้เฉพาะห้องว่าง</p>
+        <p className="mt-3 text-xs text-slate-400">ค่าเช่าเริ่มใช้กับบิลที่ออกหลังจากแก้ไข · ลบได้เฉพาะห้องว่าง (soft delete)</p>
       </section>
 
       <section className="card h-fit">

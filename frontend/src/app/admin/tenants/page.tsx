@@ -1,18 +1,12 @@
-import { prisma } from "@/lib/db";
+import { api } from "@/lib/api";
 import { baht } from "@/lib/format";
+import type { Room, Tenant } from "@/lib/types";
 import ActionForm from "@/components/ActionForm";
 import ResetPassword from "./ResetPassword";
-import { assignRoom, createTenant } from "../actions";
+import { assignRoom, createTenant, deleteTenant } from "../actions";
 
 export default async function TenantsPage() {
-  const [tenants, vacantRooms] = await Promise.all([
-    prisma.user.findMany({
-      where: { role: "TENANT" },
-      include: { room: true, bills: { where: { status: "UNPAID" }, select: { total: true } } },
-      orderBy: { createdAt: "asc" },
-    }),
-    prisma.room.findMany({ where: { tenantId: null }, orderBy: { number: "asc" } }),
-  ]);
+  const [tenants, vacantRooms] = await Promise.all([api<Tenant[]>("/tenants"), api<Room[]>("/rooms?vacant=true")]);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -31,7 +25,7 @@ export default async function TenantsPage() {
           </thead>
           <tbody>
             {tenants.map((t) => {
-              const owed = t.bills.reduce((s, b) => s + b.total, 0);
+              const owed = t.owed ?? 0;
               return (
                 <tr key={t.id}>
                   <td className="font-medium">{t.name}</td>
@@ -41,9 +35,9 @@ export default async function TenantsPage() {
                   <td>
                     <form action={assignRoom} className="flex items-center gap-2">
                       <input type="hidden" name="tenantId" value={t.id} />
-                      <select name="roomId" defaultValue={t.room?.id ?? ""} className="input !w-32" aria-label="ห้อง">
+                      <select name="roomId" defaultValue={t.roomId ?? ""} className="input !w-32" aria-label="ห้อง">
                         <option value="">— ไม่มีห้อง —</option>
-                        {t.room && <option value={t.room.id}>{t.room.number}</option>}
+                        {t.roomId && <option value={t.roomId}>{t.roomNumber}</option>}
                         {vacantRooms.map((r) => (
                           <option key={r.id} value={r.id}>{r.number}</option>
                         ))}
@@ -52,7 +46,13 @@ export default async function TenantsPage() {
                     </form>
                   </td>
                   <td>
-                    <ResetPassword tenantId={t.id} />
+                    <div className="flex items-start gap-3">
+                      <ResetPassword tenantId={t.id} />
+                      <form action={deleteTenant}>
+                        <input type="hidden" name="tenantId" value={t.id} />
+                        <button className="text-xs text-red-600 hover:underline">ลบ</button>
+                      </form>
+                    </div>
                   </td>
                 </tr>
               );
@@ -64,7 +64,7 @@ export default async function TenantsPage() {
             )}
           </tbody>
         </table>
-        <p className="mt-3 text-xs text-slate-400">เลือก “ไม่มีห้อง” แล้วกดย้าย = ผู้เช่าย้ายออก (ห้องจะกลับเป็นห้องว่าง)</p>
+        <p className="mt-3 text-xs text-slate-400">เลือก “ไม่มีห้อง” แล้วกดย้าย = ผู้เช่าย้ายออก · ลบผู้เช่าเป็น soft delete (ประวัติบิลยังอยู่)</p>
       </section>
 
       <section className="card h-fit">

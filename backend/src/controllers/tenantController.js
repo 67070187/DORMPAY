@@ -35,7 +35,9 @@ async function create(req, res) {
   const roomId = body.roomId ? requireInt(body.roomId, "roomId", { min: 1 }) : null;
 
   const id = await withTransaction(async (conn) => {
-    const tenantId = await userModel.createTenant(conn, data);
+    const tenantId = await userModel.createTenant(conn, data).catch((e) => {
+      throw e.code === "ER_DUP_ENTRY" ? new HttpError(409, `ชื่อผู้ใช้ ${username} ถูกใช้แล้ว`) : e;
+    });
     if (roomId && !(await roomModel.assignTenant(conn, roomId, tenantId))) {
       throw new HttpError(409, "ห้องนี้ไม่ว่าง หรือไม่มีอยู่");
     }

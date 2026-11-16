@@ -22,16 +22,27 @@ async function get(req, res) {
   res.json(room);
 }
 
+function duplicateRoom(e, number) {
+  return e.code === "ER_DUP_ENTRY" ? new HttpError(409, `มีห้อง ${number} อยู่แล้ว`) : e;
+}
+
 // POST /api/rooms
 async function create(req, res) {
-  const id = await roomModel.create(parseRoom(req.body));
+  const room = parseRoom(req.body);
+  const id = await roomModel.create(room).catch((e) => {
+    throw duplicateRoom(e, room.number);
+  });
   res.status(201).json(await roomModel.findById(id));
 }
 
 // PUT /api/rooms/:id
 async function update(req, res) {
   const id = idParam(req);
-  if (!(await roomModel.update(id, parseRoom(req.body)))) throw new HttpError(404, "ไม่พบห้อง");
+  const room = parseRoom(req.body);
+  const ok = await roomModel.update(id, room).catch((e) => {
+    throw duplicateRoom(e, room.number);
+  });
+  if (!ok) throw new HttpError(404, "ไม่พบห้อง");
   res.json(await roomModel.findById(id));
 }
 

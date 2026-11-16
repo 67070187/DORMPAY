@@ -1,9 +1,10 @@
-import { getSettings } from "@/lib/billing";
+import { api } from "@/lib/api";
+import type { Settings } from "@/lib/types";
 import ActionForm from "@/components/ActionForm";
 import { updateSettings } from "../actions";
 
 export default async function SettingsPage() {
-  const s = await getSettings();
+  const s = await api<Settings>("/settings");
   return (
     <div className="mx-auto max-w-lg space-y-4">
       <section className="card">
