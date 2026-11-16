@@ -8,7 +8,7 @@
 |---|---|
 | Backend (REST API) | Node.js · **Express** · **mysql2** (เขียน SQL เอง) · **JWT** (jsonwebtoken) · bcryptjs · cookie-parser · dotenv |
 | Database | **MySQL 8** (ตาราง + constraints + views ใน `backend/db/schema.sql`) |
-| Frontend | Next.js 15 · Tailwind CSS · Recharts · qrcode |
+| Frontend | Next.js 15 · Tailwind CSS · Recharts · qrcode · three.js (โมเดล 3D หอพักหน้า login) |
 | Testing | **Jest** (unit) · **supertest** (API) · **Postman** collection |
 | DevOps | **Docker** / docker-compose · **Git** |
 
