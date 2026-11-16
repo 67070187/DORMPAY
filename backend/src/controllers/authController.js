@@ -6,7 +6,7 @@ const { COOKIE_NAME, signToken } = require("../middleware/auth");
 const COOKIE_OPTIONS = {
   httpOnly: true, // JavaScript ฝั่งเบราว์เซอร์อ่าน cookie นี้ไม่ได้ (กัน XSS ขโมย token)
   sameSite: "lax",
-  secure: process.env.NODE_ENV === "production",
+  secure: process.env.COOKIE_SECURE === "true", // ตั้งเป็น true เมื่อใช้ HTTPS
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 

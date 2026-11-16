@@ -26,7 +26,7 @@ export async function login(_prev: FormState, formData: FormData): Promise<FormS
   (await cookies()).set(SESSION_COOKIE, data.token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.COOKIE_SECURE === "true", // ตั้งเป็น true เมื่อใช้ HTTPS
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
   });

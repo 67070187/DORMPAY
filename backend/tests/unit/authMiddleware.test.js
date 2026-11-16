@@ -28,6 +28,12 @@ describe("requireAuth", () => {
     expect(req.user.id).toBe(5);
   });
 
+  test("มีทั้ง Bearer และ cookie -> ใช้ Bearer", async () => {
+    const other = signToken({ id: 9, role: "ADMIN", name: "แอดมิน" });
+    const { req } = await run(requireAuth, reqWith({ cookie: token, bearer: other }));
+    expect(req.user.id).toBe(9);
+  });
+
   test("token ปลอม (เซ็นด้วย secret อื่น) -> 401", async () => {
     const fake = jwt.sign({ sub: "1", role: "ADMIN" }, "wrong-secret");
     const { err } = await run(requireAuth, reqWith({ cookie: fake }));

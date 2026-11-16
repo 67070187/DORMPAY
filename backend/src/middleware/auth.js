@@ -3,11 +3,14 @@ const HttpError = require("../utils/httpError");
 
 const COOKIE_NAME = "token";
 
-/** อ่าน JWT จาก cookie "token" หรือ header "Authorization: Bearer <token>" */
+/**
+ * อ่าน JWT จาก header "Authorization: Bearer <token>" ก่อน (ระบุมาชัดเจน)
+ * ถ้าไม่มีค่อยใช้ cookie "token" (ที่เบราว์เซอร์ส่งมาเอง)
+ */
 function readToken(req) {
-  if (req.cookies?.[COOKIE_NAME]) return req.cookies[COOKIE_NAME];
   const header = req.get("authorization") || "";
-  return header.startsWith("Bearer ") ? header.slice(7) : null;
+  if (header.startsWith("Bearer ")) return header.slice(7);
+  return req.cookies?.[COOKIE_NAME] ?? null;
 }
 
 /** Middleware: ต้องล็อกอินก่อน ถ้าผ่านจะได้ req.user = { id, role, name } */
