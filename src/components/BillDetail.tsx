@@ -2,7 +2,7 @@ import type { Bill, Payment, Room, User } from "@prisma/client";
 import { baht, monthLabel, thaiDate } from "@/lib/format";
 import StatusBadge from "./StatusBadge";
 
-const METHOD_LABEL: Record<string, string> = { card: "บัตรเครดิต/เดบิต", promptpay: "PromptPay" };
+const METHOD_LABEL: Record<string, string> = { promptpay: "PromptPay", card: "บัตรเครดิต/เดบิต", cash: "เงินสด" };
 
 type Props = { bill: Bill & { room: Room; tenant: User; payments: Payment[] } };
 

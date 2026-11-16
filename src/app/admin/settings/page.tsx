@@ -1,6 +1,5 @@
 import { getSettings } from "@/lib/billing";
 import ActionForm from "@/components/ActionForm";
-import { stripeConfigured } from "@/lib/stripe";
 import { updateSettings } from "../actions";
 
 export default async function SettingsPage() {
@@ -22,15 +21,22 @@ export default async function SettingsPage() {
             <label className="label">ครบกำหนดชำระ วันที่ (ของเดือนถัดไป)</label>
             <input name="dueDay" type="number" min="1" max="28" defaultValue={s.dueDay} className="input" required />
           </div>
+          <div className="border-t border-slate-100 pt-3">
+            <label className="label">หมายเลขพร้อมเพย์ (เบอร์โทร 10 หลัก หรือเลขบัตรประชาชน 13 หลัก)</label>
+            <input name="promptPayId" inputMode="numeric" defaultValue={s.promptPayId} className="input" required />
+          </div>
+          <div>
+            <label className="label">ชื่อบัญชีที่แสดงบน QR</label>
+            <input name="promptPayName" defaultValue={s.promptPayName} className="input" required maxLength={60} />
+          </div>
         </ActionForm>
       </section>
-      <section className="card text-sm">
-        <h2 className="mb-1 font-semibold">การชำระเงินออนไลน์ (Stripe)</h2>
-        {stripeConfigured() ? (
-          <p className="text-emerald-700">เชื่อมต่อแล้ว ({process.env.STRIPE_SECRET_KEY?.startsWith("sk_test") ? "โหมดทดสอบ" : "โหมดจริง"})</p>
-        ) : (
-          <p className="text-amber-700">ยังไม่ได้ใส่ STRIPE_SECRET_KEY ในไฟล์ .env ผู้เช่าจะยังจ่ายออนไลน์ไม่ได้</p>
-        )}
+      <section className="card text-sm text-slate-600">
+        <h2 className="mb-1 font-semibold text-slate-900">การชำระเงิน (โหมดสาธิต)</h2>
+        <p>
+          ผู้เช่าจะเห็น QR PromptPay ตามยอดบิลจากหมายเลขด้านบน เมื่อกด “โอนเงินเสร็จสิ้น” ระบบจะบันทึกว่าชำระแล้วทันที
+          โดยไม่มีการตรวจสอบเงินเข้าจริง
+        </p>
       </section>
     </div>
   );

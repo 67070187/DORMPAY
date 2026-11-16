@@ -207,12 +207,23 @@ export async function updateSettings(_prev: FormState, fd: FormData): Promise<Fo
   await requireRole("ADMIN");
   const dueDay = Number(fd.get("dueDay"));
   if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 28) return { error: "วันครบกำหนดต้องอยู่ระหว่าง 1-28" };
+  const promptPayId = str(fd, "promptPayId").replace(/\D/g, "");
+  const promptPayName = str(fd, "promptPayName");
+  if (!/^0\d{9}$/.test(promptPayId) && !/^\d{13}$/.test(promptPayId))
+    return { error: "หมายเลขพร้อมเพย์ต้องเป็นเบอร์โทร 10 หลัก หรือเลขบัตรประชาชน 13 หลัก" };
+  if (!promptPayName) return { error: "กรอกชื่อบัญชี" };
   try {
-    const data = { waterRate: toSatang(fd.get("waterRate")), elecRate: toSatang(fd.get("elecRate")), dueDay };
+    const data = {
+      waterRate: toSatang(fd.get("waterRate")),
+      elecRate: toSatang(fd.get("elecRate")),
+      dueDay,
+      promptPayId,
+      promptPayName,
+    };
     await prisma.setting.upsert({ where: { id: 1 }, create: { id: 1, ...data }, update: data });
   } catch (e) {
     return { error: (e as Error).message };
   }
   revalidatePath("/admin/settings");
-  return { ok: "บันทึกการตั้งค่าแล้ว (มีผลกับบิลที่ออกใหม่)" };
+  return { ok: "บันทึกแล้ว (อัตราค่าน้ำ-ไฟใหม่ใช้กับบิลที่ออกหลังจากนี้)" };
 }

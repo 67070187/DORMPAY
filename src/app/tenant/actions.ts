@@ -1,43 +1,35 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
-import { stripe } from "@/lib/stripe";
-import { monthLabel } from "@/lib/format";
+import { paymentReference } from "@/lib/billing";
 
-/** สร้าง Stripe Checkout Session แล้วพาผู้เช่าไปหน้าจ่ายเงินของ Stripe */
-export async function payBill(fd: FormData) {
+export type PayResult = { ok: true; reference: string } | { ok: false; error: string };
+
+/**
+ * โหมดสาธิต: ผู้เช่ากด "โอนเงินเสร็จสิ้น" แล้วระบบถือว่าจ่ายแล้วทันที
+ * (ระบบจริงต้องตรวจสอบยอดเงินเข้าจากธนาคาร/payment gateway ก่อน)
+ */
+export async function confirmDemoPayment(billId: number): Promise<PayResult> {
   const session = await requireRole("TENANT");
-  const bill = await prisma.bill.findUnique({
-    where: { id: Number(fd.get("billId")) || 0 },
-    include: { room: true },
-  });
-  if (!bill || bill.tenantId !== session.userId) redirect("/tenant");
-  if (bill.status === "PAID") redirect(`/tenant/bills/${bill.id}`);
 
-  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
-  const checkout = await stripe().checkout.sessions.create({
-    mode: "payment",
-    currency: "thb",
-    line_items: [
-      {
-        quantity: 1,
-        price_data: {
-          currency: "thb",
-          unit_amount: bill.total, // สตางค์
-          product_data: {
-            name: `ค่าหอพัก ห้อง ${bill.room.number} - ${monthLabel(bill.month)}`,
-            description: "ค่าเช่า + ค่าน้ำ + ค่าไฟ",
-          },
-        },
-      },
-    ],
-    metadata: { billId: String(bill.id) },
-    payment_intent_data: { metadata: { billId: String(bill.id) } },
-    success_url: `${appUrl}/tenant/bills/${bill.id}?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${appUrl}/tenant/bills/${bill.id}?canceled=1`,
-  });
+  const result = await prisma.$transaction(async (tx) => {
+    const bill = await tx.bill.findUnique({ where: { id: billId } });
+    if (!bill || bill.tenantId !== session.userId) return { ok: false as const, error: "ไม่พบบิลนี้" };
+    if (bill.status === "PAID") return { ok: false as const, error: "บิลนี้ชำระแล้ว" };
 
-  redirect(checkout.url!);
+    const reference = paymentReference(bill.id);
+    await tx.payment.create({ data: { billId: bill.id, amount: bill.total, reference, method: "promptpay" } });
+    // updateMany + เงื่อนไข UNPAID กันกดซ้ำพร้อมกันแล้วบันทึกสองครั้ง
+    const updated = await tx.bill.updateMany({
+      where: { id: bill.id, status: "UNPAID" },
+      data: { status: "PAID", paidAt: new Date() },
+    });
+    if (updated.count !== 1) throw new Error("บิลนี้ชำระแล้ว");
+    return { ok: true as const, reference };
+  }).catch((e: Error) => ({ ok: false as const, error: e.message }));
+
+  // ไม่เรียก revalidatePath ที่นี่ เพราะจะทำให้หน้ารีเฟรชทันทีและ modal ปิดก่อนแสดงผลสำเร็จ
+  // modal จะเรียก router.refresh() เองตอนผู้ใช้กด "เสร็จสิ้น" (หน้าอื่นเป็น dynamic อยู่แล้ว)
+  return result;
 }

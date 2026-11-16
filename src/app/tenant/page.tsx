@@ -2,10 +2,9 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import { baht, monthLabel, thaiDate } from "@/lib/format";
-import { stripeConfigured } from "@/lib/stripe";
+import { getSettings } from "@/lib/billing";
 import StatusBadge from "@/components/StatusBadge";
-import PayButton from "@/components/PayButton";
-import { payBill } from "./actions";
+import PayBill from "@/components/PayBill";
 
 export default async function TenantHome() {
   const session = await requireRole("TENANT");
@@ -16,7 +15,7 @@ export default async function TenantHome() {
   const unpaid = user.bills.filter((b) => b.status === "UNPAID");
   const owed = unpaid.reduce((s, b) => s + b.total, 0);
   const now = new Date();
-  const canPay = stripeConfigured();
+  const settings = await getSettings();
 
   return (
     <div className="space-y-6">
@@ -39,11 +38,6 @@ export default async function TenantHome() {
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">บิลที่ต้องชำระ</h2>
-        {!canPay && unpaid.length > 0 && (
-          <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-            ระบบยังไม่ได้เชื่อมต่อ Stripe จึงยังชำระออนไลน์ไม่ได้ กรุณาติดต่อเจ้าของหอ
-          </p>
-        )}
         {unpaid.map((b) => (
           <div key={b.id} className="card flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -58,12 +52,7 @@ export default async function TenantHome() {
             <div className="flex items-center gap-3">
               <span className="text-xl font-bold">{baht(b.total)} บาท</span>
               <Link href={`/tenant/bills/${b.id}`} className="btn-secondary">รายละเอียด</Link>
-              {canPay && (
-                <form action={payBill}>
-                  <input type="hidden" name="billId" value={b.id} />
-                  <PayButton label="ชำระเงิน" />
-                </form>
-              )}
+              <PayBill bill={b} settings={settings} />
             </div>
           </div>
         ))}

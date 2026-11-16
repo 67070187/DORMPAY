@@ -113,8 +113,8 @@ async function main() {
         await prisma.payment.create({
           data: {
             billId: bill.id, amount: total,
-            stripeSessionId: `seed_${bill.id}`,
-            method: room.id % 2 ? "promptpay" : "card",
+            reference: `SEED${String(bill.id).padStart(6, "0")}`,
+            method: "promptpay",
             paidAt,
           },
         });

@@ -18,11 +18,11 @@ export default async function AdminBillPage({ params }: { params: Promise<{ id: 
       <BillDetail bill={bill} />
       {bill.payments.length > 0 && (
         <div className="card text-sm">
-          <h3 className="mb-2 font-semibold">ข้อมูลการชำระ (Stripe)</h3>
+          <h3 className="mb-2 font-semibold">ข้อมูลการชำระ</h3>
           {bill.payments.map((p) => (
             <p key={p.id} className="break-all text-slate-600">
-              Session: {p.stripeSessionId}
-              {p.stripePaymentId && <> · Payment: {p.stripePaymentId}</>}
+              เลขอ้างอิง <span className="font-mono">{p.reference}</span> · {p.method} ·{" "}
+              {p.paidAt.toLocaleString("th-TH")}
             </p>
           ))}
         </div>

@@ -85,14 +85,13 @@ model Bill {
 }
 
 model Payment {
-  id              Int      @id @default(autoincrement())
-  billId          Int
-  bill            Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
-  amount          Int
-  stripeSessionId String   @unique
-  stripePaymentId String?
-  method          String?
-  paidAt          DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  billId    Int
+  bill      Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
+  amount    Int
+  reference String   @unique // เลขอ้างอิงการชำระ
+  method    String   @default("promptpay")
+  paidAt    DateTime @default(now())
 }
 
 // ตั้งค่าระบบ มีแถวเดียว (id = 1)
@@ -101,4 +100,7 @@ model Setting {
   waterRate Int @default(1800) // สตางค์ต่อหน่วย
   elecRate  Int @default(800)
   dueDay    Int @default(5) // ครบกำหนดชำระวันที่ X ของเดือนถัดไป
+
+  promptPayId   String @default("0812345678") // หมายเลขพร้อมเพย์ (สาธิต)
+  promptPayName String @default("หอพัก DORM-PAY")
 }
