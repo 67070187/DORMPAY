@@ -404,8 +404,35 @@ function buildSite(m: Mats, sway: THREE.Object3D[]) {
 /* Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export default function DormModel({ className }: { className?: string }) {
+const ENTER_MS = 1900; // ความยาวแอนิเมชันซูมเข้าหอ
+const DOOR = new THREE.Vector3(ENTRANCE.x, 0.7, FRONT_BAY.z1);
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const easeIn = (t: number) => t * t * t;
+
+/**
+ * @param entering เปลี่ยนเป็น true เพื่อเริ่มแอนิเมชันกล้องบินเข้าประตูหอ
+ * @param onEntered เรียกเมื่อแอนิเมชันจบ (หรือทันที ถ้าเครื่องไม่รองรับ WebGL / ผู้ใช้ตั้งลดภาพเคลื่อนไหว)
+ */
+export default function DormModel({
+  className,
+  entering = false,
+  onEntered,
+}: {
+  className?: string;
+  entering?: boolean;
+  onEntered?: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
+  const onEnteredRef = useRef(onEntered);
+  const startEnterRef = useRef<() => void>(() => onEnteredRef.current?.());
+
+  useEffect(() => {
+    onEnteredRef.current = onEntered;
+  }, [onEntered]);
+
+  useEffect(() => {
+    if (entering) startEnterRef.current();
+  }, [entering]);
 
   useEffect(() => {
     const el = ref.current;
@@ -415,7 +442,7 @@ export default function DormModel({ className }: { className?: string }) {
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     } catch {
-      return; // ไม่รองรับ WebGL: แสดงพื้นหลังสีฟ้าเฉยๆ
+      return; // ไม่รองรับ WebGL: แสดงพื้นหลังสีฟ้าเฉยๆ (startEnterRef จะเรียก onEntered ทันที)
     }
     const small = el.clientWidth < 640;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -479,6 +506,10 @@ export default function DormModel({ className }: { className?: string }) {
     composer.addPass(ao);
     composer.addPass(new OutputPass());
 
+    // สถานะแอนิเมชันซูมเข้าหอ (ดูรายละเอียดที่ startEnterRef ด้านล่าง)
+    let enter: { start: number; target: THREE.Vector3; sph: THREE.Spherical; dTheta: number } | null = null;
+    let entered = false;
+
     const resize = () => {
       const { clientWidth: w, clientHeight: h } = el;
       if (!w || !h) return;
@@ -486,10 +517,12 @@ export default function DormModel({ className }: { className?: string }) {
       composer.setPixelRatio(renderer.getPixelRatio());
       composer.setSize(w, h);
       camera.aspect = w / h;
-      // ถอยกล้องให้ทั้งตึก (รัศมีประมาณ 10.5 หน่วย) อยู่ในจอพอดี ไม่ว่าจอจะกว้างหรือแคบ
-      const vHalf = THREE.MathUtils.degToRad(camera.fov / 2);
-      const hHalf = Math.atan(Math.tan(vHalf) * camera.aspect);
-      camera.position.setLength(10.5 / Math.sin(Math.min(vHalf, hHalf)));
+      if (!enter) {
+        // ถอยกล้องให้ทั้งตึก (รัศมีประมาณ 10.5 หน่วย) อยู่ในจอพอดี ไม่ว่าจอจะกว้างหรือแคบ
+        const vHalf = THREE.MathUtils.degToRad(camera.fov / 2);
+        const hHalf = Math.atan(Math.tan(vHalf) * camera.aspect);
+        camera.position.setLength(10.5 / Math.sin(Math.min(vHalf, hHalf)));
+      }
       camera.updateProjectionMatrix();
     };
     const resizeObserver = new ResizeObserver(resize);
@@ -514,9 +547,54 @@ export default function DormModel({ className }: { className?: string }) {
       resize();
     };
 
+    /*
+     * แอนิเมชันซูมเข้าหอ (เล่นหลังล็อกอินสำเร็จ)
+     * ช่วงแรก: กล้องหมุนมาด้านหน้าตึก ลดระดับลง และเล็งไปที่ประตูทางเข้า
+     * ช่วงหลัง: พุ่งตรงเข้าประตู (หน้าเว็บจะค่อยๆ ขาวทับตอนท้าย)
+     */
+    const finishEnter = () => {
+      if (entered) return;
+      entered = true;
+      onEnteredRef.current?.();
+    };
+    startEnterRef.current = () => {
+      if (enter || entered) return;
+      if (reduceMotion) return finishEnter();
+      controls.enabled = false;
+      controls.autoRotate = false;
+      const sph = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target));
+      const dTheta = Math.atan2(Math.sin(-sph.theta), Math.cos(-sph.theta)); // หมุนทางที่ใกล้กว่าไปด้านหน้า (theta = 0)
+      enter = { start: performance.now(), target: controls.target.clone(), sph, dTheta };
+      sync();
+    };
+
+    const tmpTarget = new THREE.Vector3();
+    const tmpSph = new THREE.Spherical();
+    const updateEnter = () => {
+      if (!enter) return;
+      const p = Math.min(1, (performance.now() - enter.start) / ENTER_MS);
+      const HALF = 0.55;
+      if (p < HALF) {
+        const a = easeInOut(p / HALF);
+        tmpTarget.lerpVectors(enter.target, DOOR, a);
+        tmpSph.set(
+          THREE.MathUtils.lerp(enter.sph.radius, 9, a),
+          THREE.MathUtils.lerp(enter.sph.phi, 1.3, a),
+          enter.sph.theta + enter.dTheta * a,
+        );
+      } else {
+        const b = easeIn((p - HALF) / (1 - HALF));
+        tmpTarget.set(DOOR.x, DOOR.y, DOOR.z - b * 2);
+        tmpSph.set(THREE.MathUtils.lerp(9, 0.15, b), THREE.MathUtils.lerp(1.3, Math.PI / 2, b), 0);
+      }
+      camera.position.setFromSpherical(tmpSph).add(tmpTarget);
+      camera.lookAt(tmpTarget);
+      if (p >= 1) finishEnter();
+    };
+
     const clock = new THREE.Clock();
     const loop = () => {
-      adapt();
+      if (!enter) adapt();
       const t = clock.getElapsedTime();
       if (!reduceMotion) {
         for (const c of sway) {
@@ -524,13 +602,16 @@ export default function DormModel({ className }: { className?: string }) {
           c.rotation.x = Math.cos(t * 0.7 + c.userData.phase) * 0.015;
         }
       }
-      controls.update();
-      composer.render();    };
+      if (enter) updateEnter();
+      else controls.update();
+      composer.render();
+    };
 
-    // หยุดวาดเมื่อมองไม่เห็น (ประหยัดแบตมือถือ)
+    // หยุดวาดเมื่อมองไม่เห็น (ประหยัดแบตมือถือ) ยกเว้นตอนกำลังเล่นแอนิเมชันเข้าหอ
     let visible = true;
     const sync = () => {
-      renderer.setAnimationLoop(visible && document.visibilityState === "visible" ? loop : null);
+      const on = (visible && document.visibilityState === "visible") || (enter !== null && !entered);
+      renderer.setAnimationLoop(on ? loop : null);
       frames = 0;
       windowStart = performance.now();
     };
@@ -543,6 +624,7 @@ export default function DormModel({ className }: { className?: string }) {
     sync();
 
     return () => {
+      startEnterRef.current = () => onEnteredRef.current?.();
       renderer.setAnimationLoop(null);
       document.removeEventListener("visibilitychange", sync);
       io.disconnect();

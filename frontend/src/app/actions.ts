@@ -6,9 +6,13 @@ import { API_URL } from "@/lib/api";
 import { SESSION_COOKIE } from "@/lib/auth";
 
 export type FormState = { error?: string; ok?: string } | undefined;
+export type LoginState = { error?: string; redirectTo?: string } | undefined;
 
-/** ส่งชื่อผู้ใช้/รหัสผ่านไปที่ POST /api/auth/login แล้วเก็บ JWT ไว้ใน httpOnly cookie */
-export async function login(_prev: FormState, formData: FormData): Promise<FormState> {
+/**
+ * ส่งชื่อผู้ใช้/รหัสผ่านไปที่ POST /api/auth/login แล้วเก็บ JWT ไว้ใน httpOnly cookie
+ * ไม่ redirect ทันที แต่ส่งปลายทางกลับไป ให้หน้า login เล่นแอนิเมชันซูมเข้าหอก่อน
+ */
+export async function login(_prev: LoginState, formData: FormData): Promise<LoginState> {
   let res: Response;
   try {
     res = await fetch(`${API_URL}/auth/login`, {
@@ -30,7 +34,7 @@ export async function login(_prev: FormState, formData: FormData): Promise<FormS
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
   });
-  redirect(data.user.role === "ADMIN" ? "/admin" : "/tenant");
+  return { redirectTo: data.user.role === "ADMIN" ? "/admin" : "/tenant" };
 }
 
 export async function logout() {
