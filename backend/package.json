@@ -1,0 +1,35 @@
+{
+  "name": "dorm-pay-backend",
+  "version": "1.0.0",
+  "description": "DORM-PAY REST API (Express + MySQL)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "db:init": "node db/init.js",
+    "db:seed": "node db/init.js --seed",
+    "test": "jest --runInBand",
+    "test:unit": "jest tests/unit",
+    "test:api": "jest tests/api --runInBand"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "setupFiles": [
+      "./tests/setupEnv.js"
+    ],
+    "globalSetup": "./tests/globalSetup.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^18.0.10",
+    "express": "^5.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "mysql2": "^3.24.6"
+  },
+  "devDependencies": {
+    "jest": "^30.5.2",
+    "nodemon": "^3.1.14",
+    "supertest": "^7.3.2"
+  }
+}
