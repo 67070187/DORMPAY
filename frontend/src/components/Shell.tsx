@@ -2,6 +2,7 @@ import Link from "next/link";
 import { logout } from "@/app/actions";
 import { LogOut } from "lucide-react";
 import NavLinks, { type NavLink } from "./NavLinks";
+import Logo from "./Logo";
 
 export default function Shell({
   title,
@@ -19,7 +20,7 @@ export default function Shell({
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
           <Link href="/" className="flex items-center gap-2 font-bold">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white">D</span>
+            <Logo size={32} />
             DORM-PAY
             <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">{title}</span>
           </Link>

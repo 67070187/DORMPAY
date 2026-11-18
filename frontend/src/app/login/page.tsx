@@ -4,6 +4,7 @@ import { useActionState, useCallback, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { login } from "@/app/actions";
+import Logo from "@/components/Logo";
 
 // โหลดโมเดล 3D เฉพาะฝั่งเบราว์เซอร์ (three.js ใช้ WebGL ซึ่งไม่มีบนเซิร์ฟเวอร์)
 const DormModel = dynamic(() => import("@/components/DormModel"), { ssr: false });
@@ -56,9 +57,7 @@ export default function LoginPage() {
       >
         <div className="w-full max-w-sm">
           <div className="mb-6 text-center">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 text-xl font-bold text-white">
-              D
-            </div>
+            <Logo size={56} className="mx-auto mb-3 drop-shadow-md" />
             <h1 className="text-2xl font-bold">DORM-PAY</h1>
             <p className="text-sm text-slate-500">ระบบจ่ายค่าหอพักออนไลน์</p>
           </div>
