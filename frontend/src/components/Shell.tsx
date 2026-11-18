@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { logout } from "@/app/actions";
-import NavLinks from "./NavLinks";
+import { LogOut } from "lucide-react";
+import NavLinks, { type NavLink } from "./NavLinks";
 
 export default function Shell({
   title,
@@ -10,7 +11,7 @@ export default function Shell({
 }: {
   title: string;
   name: string;
-  links: { href: string; label: string }[];
+  links: NavLink[];
   children: React.ReactNode;
 }) {
   return (
@@ -26,7 +27,10 @@ export default function Shell({
           <div className="ml-auto flex items-center gap-3 text-sm">
             <span className="text-slate-600">{name}</span>
             <form action={logout}>
-              <button className="btn-secondary !px-3 !py-1.5">ออกจากระบบ</button>
+              <button className="btn-secondary !px-3 !py-1.5">
+                <LogOut className="h-4 w-4" strokeWidth={1.8} aria-hidden />
+                ออกจากระบบ
+              </button>
             </form>
           </div>
         </div>
