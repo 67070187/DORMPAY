@@ -24,9 +24,15 @@ export function monthLabel(month: string): string {
   return `${TH_MONTHS[m - 1]} ${y + 543}`;
 }
 
+const TH_MONTHS_SHORT = [
+  "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+  "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
+];
+
+/** "2026-05" -> "พ.ค. 69" (ตัวย่อเดือนแบบมาตรฐาน) */
 export function shortMonthLabel(month: string): string {
   const [y, m] = month.split("-").map(Number);
-  return `${TH_MONTHS[m - 1].slice(0, 3)} ${String(y + 543).slice(2)}`;
+  return `${TH_MONTHS_SHORT[m - 1]} ${String(y + 543).slice(2)}`;
 }
 
 export function currentMonth(date = new Date()): string {
