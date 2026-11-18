@@ -1,12 +1,19 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
+import { toast } from "@/lib/toast";
 import { resetTenantPassword } from "../actions";
 import FormMessage from "@/components/FormMessage";
 
 export default function ResetPassword({ tenantId }: { tenantId: number }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(resetTenantPassword, undefined);
+
+  useEffect(() => {
+    if (!state?.ok) return;
+    toast.success(state.ok);
+    setOpen(false);
+  }, [state]);
 
   if (!open)
     return (

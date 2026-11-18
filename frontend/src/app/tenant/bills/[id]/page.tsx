@@ -1,4 +1,4 @@
-import Link from "next/link";
+import BackLink from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import type { BillWithPayments } from "@/lib/types";
@@ -14,7 +14,7 @@ export default async function TenantBillPage({ params }: { params: Promise<{ id:
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <Link href="/tenant" className="text-sm text-indigo-600 hover:underline">← กลับไปหน้าบิลของฉัน</Link>
+      <BackLink href="/tenant" label="บิลของฉัน" />
       <BillDetail bill={bill} />
       {bill.status === "UNPAID" && (
         <div className="flex items-center gap-3">

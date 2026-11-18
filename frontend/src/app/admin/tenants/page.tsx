@@ -2,6 +2,7 @@ import { api } from "@/lib/api";
 import { baht } from "@/lib/format";
 import type { Room, Tenant } from "@/lib/types";
 import ActionForm from "@/components/ActionForm";
+import ToastForm, { SubmitButton } from "@/components/ToastForm";
 import ResetPassword from "./ResetPassword";
 import { assignRoom, createTenant, deleteTenant } from "../actions";
 
@@ -33,7 +34,7 @@ export default async function TenantsPage() {
                   <td className="text-slate-500">{t.phone ?? "-"}</td>
                   <td className={owed ? "font-medium text-red-600" : "text-slate-400"}>{owed ? baht(owed) : "-"}</td>
                   <td>
-                    <form action={assignRoom} className="flex items-center gap-2">
+                    <ToastForm action={assignRoom} className="flex items-center gap-2">
                       <input type="hidden" name="tenantId" value={t.id} />
                       <select name="roomId" defaultValue={t.roomId ?? ""} className="input !w-32" aria-label="ห้อง">
                         <option value="">— ไม่มีห้อง —</option>
@@ -42,16 +43,17 @@ export default async function TenantsPage() {
                           <option key={r.id} value={r.id}>{r.number}</option>
                         ))}
                       </select>
-                      <button className="btn-secondary !px-3 !py-1.5">ย้าย</button>
-                    </form>
+                      <SubmitButton className="btn-secondary !px-3 !py-1.5" pendingLabel="กำลังย้าย">ย้าย</SubmitButton>
+                    </ToastForm>
                   </td>
                   <td>
                     <div className="flex items-start gap-3">
                       <ResetPassword tenantId={t.id} />
-                      <form action={deleteTenant}>
+                      <ToastForm action={deleteTenant} confirmMessage={`ลบผู้เช่า ${t.name}?`}>
                         <input type="hidden" name="tenantId" value={t.id} />
-                        <button className="text-xs text-red-600 hover:underline">ลบ</button>
-                      </form>
+                        <input type="hidden" name="name" value={t.name} />
+                        <SubmitButton className="text-xs text-red-600 hover:underline">ลบ</SubmitButton>
+                      </ToastForm>
                     </div>
                   </td>
                 </tr>

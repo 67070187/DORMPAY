@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { api, ApiError, errorMessage } from "@/lib/api";
-import { toSatang } from "@/lib/format";
+import { baht, toSatang } from "@/lib/format";
 import type { FormState } from "@/app/actions";
 
 // server action ทุกตัวในไฟล์นี้แค่แปลงข้อมูลฟอร์ม แล้วเรียก Express API
@@ -29,17 +29,33 @@ export async function createRoom(_prev: FormState, fd: FormData): Promise<FormSt
   }
 }
 
-export async function updateRoomRent(fd: FormData) {
-  await api(`/rooms/${fd.get("id")}`, {
-    method: "PUT",
-    body: { number: str(fd, "number"), floor: Number(fd.get("floor")), rent: toSatang(fd.get("rent")) },
-  });
-  revalidatePath("/admin/rooms");
+/** ไว้ใช้กับ server action ที่ไม่ได้มาจากฟอร์มแบบ ActionForm: แปลง error เป็นข้อความ */
+function failure(e: unknown): FormState {
+  if (e instanceof RangeError) return { error: e.message };
+  return { error: errorMessage(e) };
 }
 
-export async function deleteRoom(fd: FormData) {
-  await api(`/rooms/${fd.get("id")}`, { method: "DELETE" });
-  revalidatePath("/admin/rooms");
+export async function updateRoomRent(fd: FormData): Promise<FormState> {
+  try {
+    const room = await api<{ number: string; rent: number }>(`/rooms/${fd.get("id")}`, {
+      method: "PUT",
+      body: { number: str(fd, "number"), floor: Number(fd.get("floor")), rent: toSatang(fd.get("rent")) },
+    });
+    revalidatePath("/admin/rooms");
+    return { ok: `บันทึกค่าเช่าห้อง ${room.number} เป็น ${baht(room.rent)} บาทแล้ว` };
+  } catch (e) {
+    return failure(e);
+  }
+}
+
+export async function deleteRoom(fd: FormData): Promise<FormState> {
+  try {
+    await api(`/rooms/${fd.get("id")}`, { method: "DELETE" });
+    revalidatePath("/admin/rooms");
+    return { ok: `ลบห้อง ${str(fd, "number")} แล้ว` };
+  } catch (e) {
+    return failure(e);
+  }
 }
 
 /* ---------------- ผู้เช่า ---------------- */
@@ -63,12 +79,18 @@ export async function createTenant(_prev: FormState, fd: FormData): Promise<Form
   }
 }
 
-export async function assignRoom(fd: FormData) {
-  await api(`/tenants/${fd.get("tenantId")}/room`, {
-    method: "PUT",
-    body: { roomId: Number(fd.get("roomId")) || null },
-  });
-  revalidatePath("/admin/tenants");
+export async function assignRoom(fd: FormData): Promise<FormState> {
+  try {
+    const t = await api<{ name: string; roomNumber: string | null }>(`/tenants/${fd.get("tenantId")}/room`, {
+      method: "PUT",
+      body: { roomId: Number(fd.get("roomId")) || null },
+    });
+    revalidatePath("/admin/tenants");
+    revalidatePath("/admin/rooms");
+    return { ok: t.roomNumber ? `ย้าย ${t.name} ไปห้อง ${t.roomNumber} แล้ว` : `${t.name} ย้ายออกจากห้องแล้ว` };
+  } catch (e) {
+    return failure(e);
+  }
 }
 
 export async function resetTenantPassword(_prev: FormState, fd: FormData): Promise<FormState> {
@@ -80,9 +102,15 @@ export async function resetTenantPassword(_prev: FormState, fd: FormData): Promi
   }
 }
 
-export async function deleteTenant(fd: FormData) {
-  await api(`/tenants/${fd.get("tenantId")}`, { method: "DELETE" });
-  revalidatePath("/admin/tenants");
+export async function deleteTenant(fd: FormData): Promise<FormState> {
+  try {
+    await api(`/tenants/${fd.get("tenantId")}`, { method: "DELETE" });
+    revalidatePath("/admin/tenants");
+    revalidatePath("/admin/rooms");
+    return { ok: `ลบผู้เช่า ${str(fd, "name")} แล้ว` };
+  } catch (e) {
+    return failure(e);
+  }
 }
 
 /* ---------------- จดมิเตอร์ + ออกบิล ---------------- */

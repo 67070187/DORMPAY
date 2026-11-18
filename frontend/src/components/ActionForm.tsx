@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef } from "react";
 import type { FormState } from "@/app/actions";
 import FormMessage from "./FormMessage";
+import { toast } from "@/lib/toast";
 
 /** ฟอร์มที่เรียก server action แล้วแสดงข้อความสำเร็จ/ผิดพลาด */
 export default function ActionForm({
@@ -22,7 +23,9 @@ export default function ActionForm({
   const ref = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
-    if (state?.ok && resetOnSuccess) ref.current?.reset();
+    if (!state?.ok) return;
+    toast.success(state.ok);
+    if (resetOnSuccess) ref.current?.reset();
   }, [state, resetOnSuccess]);
 
   return (

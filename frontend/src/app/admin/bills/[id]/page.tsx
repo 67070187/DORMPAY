@@ -1,4 +1,4 @@
-import Link from "next/link";
+import BackLink from "@/components/BackLink";
 import { notFound } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import type { BillWithPayments } from "@/lib/types";
@@ -14,7 +14,7 @@ export default async function AdminBillPage({ params }: { params: Promise<{ id: 
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <Link href="/admin/bills" className="text-sm text-indigo-600 hover:underline">← กลับไปหน้าบิล</Link>
+      <BackLink href="/admin/bills" label="บิลทั้งหมด" />
       <BillDetail bill={bill} />
       {bill.payments.length > 0 && (
         <div className="card text-sm">

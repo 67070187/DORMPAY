@@ -1,6 +1,7 @@
 import { api } from "@/lib/api";
 import type { Room } from "@/lib/types";
 import ActionForm from "@/components/ActionForm";
+import ToastForm, { SubmitButton } from "@/components/ToastForm";
 import { createRoom, deleteRoom, updateRoomRent } from "../actions";
 
 export default async function RoomsPage() {
@@ -37,7 +38,7 @@ export default async function RoomsPage() {
                   )}
                 </td>
                 <td>
-                  <form action={updateRoomRent} className="flex items-center gap-2">
+                  <ToastForm action={updateRoomRent} className="flex items-center gap-2">
                     <input type="hidden" name="id" value={r.id} />
                     <input type="hidden" name="number" value={r.number} />
                     <input type="hidden" name="floor" value={r.floor} />
@@ -50,15 +51,16 @@ export default async function RoomsPage() {
                       className="input !w-28"
                       aria-label={`ค่าเช่าห้อง ${r.number}`}
                     />
-                    <button className="btn-secondary !px-3 !py-1.5">บันทึก</button>
-                  </form>
+                    <SubmitButton className="btn-secondary !px-3 !py-1.5" pendingLabel="กำลังบันทึก">บันทึก</SubmitButton>
+                  </ToastForm>
                 </td>
                 <td className="text-right">
                   {!r.tenantId && (
-                    <form action={deleteRoom}>
+                    <ToastForm action={deleteRoom} confirmMessage={`ลบห้อง ${r.number}?`}>
                       <input type="hidden" name="id" value={r.id} />
-                      <button className="btn-danger">ลบ</button>
-                    </form>
+                      <input type="hidden" name="number" value={r.number} />
+                      <SubmitButton className="btn-danger">ลบ</SubmitButton>
+                    </ToastForm>
                   )}
                 </td>
               </tr>
