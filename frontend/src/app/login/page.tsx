@@ -43,13 +43,6 @@ export default function LoginPage() {
           entering={entering}
           onEntered={goIn}
         />
-        <div
-          className={`pointer-events-none absolute inset-x-0 bottom-0 p-5 pt-12 lg:p-8 lg:pt-16 ${fade}`}
-          style={{ background: "linear-gradient(to top, rgba(238,242,255,0.95) 30%, rgba(238,242,255,0))" }}
-        >
-          <p className="text-lg font-semibold text-indigo-950 lg:text-2xl">จ่ายค่าหอง่ายๆ แค่สแกน QR</p>
-          <p className="text-sm text-indigo-900/70">ลากเพื่อหมุนดูหอพัก</p>
-        </div>
       </section>
 
       <section
@@ -75,9 +68,6 @@ export default function LoginPage() {
               {entering ? "กำลังเข้าหอ..." : pending ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
             </button>
           </form>
-          <p className="mt-4 text-center text-xs text-slate-400">
-            บัญชีทดสอบ: admin / admin1234 · tenant1 / tenant1234
-          </p>
         </div>
       </section>
 
